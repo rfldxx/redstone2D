@@ -1,0 +1,1827 @@
+
+<div id="canvas_div" style="position:relative; width:800px; height:500px;">
+    <canvas id="layer1" width="800" height="500" style="position:absolute; left:0px; top:0px;"></canvas>
+    <canvas id="layer2" width="800" height="500" style="position:absolute; left:0px; top:0px;"></canvas>
+</div>
+
+
+<!-- <canvas id="my_canvas" style="border:solid" width="800" height="500"></canvas> -->
+
+
+<script>
+
+
+const ctx = layer1.getContext('2d');
+
+
+const above_ctx = layer2.getContext('2d');
+
+// ай, пускай будут
+const WW = layer1.width, HH = layer1.height; 
+
+
+let GRINDda = 5;
+
+let GRINDx1 = 50.5, GRINDy1 = 50.5, GRINDa = 50, GRINDx_quantity = 12, GRINDy_quantity = 7;
+
+
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// ОТРИСОВКА РЕДСТОУН ЭЛЕМЕНТОВ
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+// Цвета
+const COLOR = {
+    RED_ON :    '#dd2222',
+    RED_OFF:    '#770101',
+    WOOD:       '#9C743A',
+
+    REPEATER_BORDER:           '#7d7f7d',
+    REPEATER_BODY:             '#979997',
+    REPEATER_CORNER_INSERTION: '#cfb53b', //'#fad201',
+    REPEATER_SIDE_INSERTION:   '#7d7f7d', //'#cfb53b',  // '#b87333',
+    REPEATER_AUREOLE:          '#6600ff',
+    REPEATER_DUST_BORDER:      '#321414',
+
+    LEVER_BODY: '#979997'
+};
+
+function TTT() {
+    // рисование иконок (по хорошему бы @инвентарь@ сначала на отдельном canvas отрисовывать, а потом впихивать в нужное место)
+    let X1 = GRINDx1, Y1 = GRINDy1 + GRINDy_quantity*GRINDa + 2*GRINDda;
+    let iii = 0;
+    // вот бы прям честный хотбар из майнкрафта сюда добавить
+    ctx.strokeStyle = 'black';
+    ctx.lineWidth   = 1;
+    ctx.beginPath();
+    for(let e of Object.values(redstone_icons)) {
+        ctx.drawImage(e, X1 + iii, Y1);
+
+        ctx.rect(X1 + iii, Y1, e.width, e.height);
+        
+        iii += e.width + 10;
+    }
+    ctx.stroke();
+
+
+    let l = Object.keys(COLOR).length;
+    let xscale = 0.2;
+    let yscale = xscale* WW / l / HH;  // рисуем квадраты
+    let x = (1 - xscale) * WW, dx = xscale*WW/l, y = (1 - yscale) * HH;
+    for(let e in COLOR) {
+        ctx.beginPath();
+        ctx.rect(x, y, dx, HH);
+        ctx.fillStyle = COLOR[e];
+        ctx.fill();
+        x += dx;
+    }
+    console.log(`color boxes drawes:  cnt=${l}  size=${dx}`);
+
+    draw_dust(ctx, GRINDa, GRINDx1 + GRINDa*1.5, GRINDy1 + GRINDa/2, COLOR.RED_ON , [[0, +1]]);
+    draw_dust(ctx, GRINDa, GRINDx1 + GRINDa*2.5, GRINDy1 + GRINDa/2, COLOR.RED_OFF, []);
+    draw_dust(ctx, GRINDa, GRINDx1 + GRINDa/2  , GRINDy1 + GRINDa/2, COLOR.RED_OFF, [[0, +1]]);
+
+    
+    draw_dust(ctx, GRINDa, GRINDx1 + GRINDa*3.5, GRINDy1 + GRINDa/2, COLOR.RED_OFF, [[+1, 0]]);
+    draw_dust(ctx, GRINDa, GRINDx1 + GRINDa*4.5, GRINDy1 + GRINDa/2, COLOR.RED_OFF, [[+1, 0], [-1,0]], 0);
+    draw_dust(ctx, GRINDa, GRINDx1 + GRINDa*5.5, GRINDy1 + GRINDa/2, COLOR.RED_OFF, [[-1, 0]]);
+
+    draw_torch(ctx, GRINDa, GRINDx1 + GRINDa*0.5, GRINDy1 + GRINDa*1.5, COLOR.RED_OFF);
+    draw_torch(ctx, GRINDa, GRINDx1 + GRINDa*1.5, GRINDy1 + GRINDa*1.5, COLOR.RED_ON);
+
+
+    draw_torch2(ctx, GRINDa, GRINDx1 + GRINDa*0.5, GRINDy1 + GRINDa*2.5, COLOR.RED_OFF);
+    draw_torch2(ctx, GRINDa, GRINDx1 + GRINDa*1.5, GRINDy1 + GRINDa*2.5, COLOR.RED_ON);
+
+    draw_repeater(ctx,   GRINDa, GRINDx1 + GRINDa*0, GRINDy1 + GRINDa*3, COLOR.RED_OFF,   0);
+    draw_repeater(ctx, 1*GRINDa, GRINDx1 + GRINDa*1, GRINDy1 + GRINDa*3, COLOR.RED_ON ,   0);
+    draw_repeater(ctx,   GRINDa, GRINDx1 + GRINDa*2, GRINDy1 + GRINDa*3, COLOR.RED_ON ,   0.33);
+    draw_repeater(ctx,   GRINDa, GRINDx1 + GRINDa*3, GRINDy1 + GRINDa*3, COLOR.RED_ON ,   0.66);
+    draw_repeater(ctx,   GRINDa, GRINDx1 + GRINDa*4, GRINDy1 + GRINDa*3, COLOR.RED_ON ,   1);
+ 
+    draw_lever (ctx, GRINDa, GRINDx1 + 2*GRINDa,  GRINDy1 +   GRINDa, COLOR.RED_OFF, -1);
+    draw_lever (ctx, GRINDa, GRINDx1 + 3*GRINDa,  GRINDy1 +   GRINDa, COLOR.RED_OFF,  0);
+    draw_lever (ctx, GRINDa, GRINDx1 + 4*GRINDa,  GRINDy1 +   GRINDa, COLOR.RED_ON , +1);
+    draw_lever2(ctx, GRINDa, GRINDx1 + 2*GRINDa,  GRINDy1 + 2*GRINDa, COLOR.RED_OFF, -1);
+    draw_lever2(ctx, GRINDa, GRINDx1 + 3*GRINDa,  GRINDy1 + 2*GRINDa, COLOR.RED_OFF,  0);
+    draw_lever2(ctx, GRINDa, GRINDx1 + 4*GRINDa,  GRINDy1 + 2*GRINDa, COLOR.RED_ON , +1);
+}
+
+
+let redstone_predraw = [];
+
+function draw_dust(draw_ctx, a, shift_xc, shift_yc, clr, connection = [], scale_c = 0.45, w_line = 5) {
+    a /= 2;  // везде дальше по сути используется "радиус"
+    
+    for(let [dx, dy] of connection) {
+        draw_ctx.beginPath();
+        draw_ctx.moveTo(shift_xc, shift_yc);
+        draw_ctx.lineTo(shift_xc + a*dx, shift_yc + a*dy);
+        draw_ctx.lineWidth   = w_line;
+        draw_ctx.strokeStyle = clr;
+        draw_ctx.stroke();
+    }
+
+
+    // только прямая линия (без ромба по центру)
+    let no_centre = 0;
+    if( connection.length == 2 ) {
+        if( connection[0][0] == -connection[1][0] && connection[0][1] == -connection[1][1] ) no_centre = 1;
+    }
+
+
+    // середина
+    if( scale_c <= 0 || no_centre ) return;
+    draw_ctx.beginPath();
+    // ctx.arc(shift_xc, shift_yc, r_circ, 0, 2*Math.PI);
+    let b = scale_c*a;
+    draw_ctx.moveTo(shift_xc + b, shift_yc);
+    draw_ctx.lineTo(shift_xc, shift_yc + b);
+    draw_ctx.lineTo(shift_xc - b, shift_yc);
+    draw_ctx.lineTo(shift_xc, shift_yc - b);
+    draw_ctx.closePath();
+    draw_ctx.fillStyle = clr;
+    draw_ctx.fill();
+}
+
+function draw_torch(draw_ctx, a, shift_xc, shift_yc, clr) {
+    a /= 2;  // везде дальше по сути используется "радиус" (здесь это кринжово используется конечно)
+
+    // факел
+    draw_ctx.beginPath();
+    let r_circ = 0.5 * a;
+    draw_ctx.arc(shift_xc, shift_yc, r_circ, 0, 2*Math.PI);
+    draw_ctx.fillStyle = clr;
+    
+    draw_ctx.strokeStyle = COLOR.REPEATER_DUST_BORDER;
+    draw_ctx.lineWidth   = 1;
+    draw_ctx.fill();
+    draw_ctx.stroke();
+
+    // (деревяная) ножка факела
+    draw_ctx.beginPath();
+    let b = 0.45 * a;
+    draw_ctx.rect(shift_xc-b/2, shift_yc -b/2, b, b);
+    draw_ctx.fillStyle = COLOR.WOOD;
+    draw_ctx.stroke();
+    draw_ctx.fill();
+}
+
+function draw_torch2(draw_ctx, a, shift_xc, shift_yc, clr) { 
+    a /= 2;
+
+    draw_ctx.beginPath();
+    let b = 0.6* a;
+    draw_ctx.moveTo(shift_xc-b/2, shift_yc-b/2);
+    let reduce = 0.6;
+    draw_ctx.lineTo(shift_xc+a, shift_yc- reduce*b/2);
+    draw_ctx.lineTo(shift_xc+a, shift_yc+ reduce*b/2);
+    draw_ctx.lineTo(shift_xc-b/2, shift_yc+b/2);
+    draw_ctx.closePath();
+    draw_ctx.fillStyle = COLOR.WOOD;
+    draw_ctx.fill();
+
+    draw_ctx.strokeStyle = COLOR.REPEATER_DUST_BORDER;
+    draw_ctx.lineWidth   = 1;
+    draw_ctx.stroke();
+    // ctx.fill();
+
+    draw_torch(draw_ctx, 2*a, shift_xc, shift_yc, clr);  // да уж как-то не оч умножать тут на 2...
+}
+
+// pos - типо задержка (значения из [0, +1])
+function draw_repeater(draw_ctx, a, x1, y1, clr, pos = 0.5) {
+    draw_ctx.beginPath();
+    draw_ctx.rect(x1, y1, a, a);
+    draw_ctx.fillStyle = COLOR.REPEATER_BODY;
+    draw_ctx.fill();
+
+    // масштабы
+    let scale_border = 0.075;
+    let scale_corner = 0; //2*scale_border;
+    let scale_side_x   = 1.5*scale_border;
+    let scale_side_y   = 0.4;
+
+    let scale_trg_base = 0.8;
+    let scale_trg_h    = scale_trg_base;
+    let scale_trg_lift = 0.05;
+
+    let scale_dust_base = 0.12;
+    let scale_dust_h    = 0.45;
+    let scale_dust_lift = 0.14;
+
+    let scale_y1     = 0.82;
+    let scale_radius = 0.1;
+
+
+    {   // треугольник
+        let A  = a*scale_trg_base;
+        let H  = a*scale_trg_h;
+        let dh = a*scale_trg_lift;
+        draw_ctx.strokeStyle = COLOR.REPEATER_AUREOLE;
+        draw_ctx.lineWidth = 2;
+        draw_ctx.beginPath();
+        draw_ctx.moveTo(x1 + (a-A)/2, y1 + a - dh);
+        draw_ctx.lineTo(x1 +   a  /2, y1 + a - dh - H);
+        draw_ctx.lineTo(x1 + (a+A)/2, y1 + a - dh);
+        draw_ctx.closePath();
+        draw_ctx.stroke();
+    }
+
+
+    // граница
+    let b =  a * scale_border;
+    draw_ctx.fillStyle = COLOR.REPEATER_BORDER;
+    for(let [dx, dy, t] of [[0,0,0], [0,0,1], [a-b,0,1], [0,a-b,0]]) {
+        draw_ctx.beginPath();
+        draw_ctx.rect(x1 + dx, y1 + dy, [a, b][t], [b, a][t]);
+        draw_ctx.fill();
+    }
+
+    // вставки
+    let c = a * scale_corner;
+    draw_ctx.fillStyle = COLOR.REPEATER_CORNER_INSERTION;
+    for(let [dx, dy] of [[0, 0], [0, a-c], [a-c, 0], [a-c, a-c]]) {
+        draw_ctx.beginPath();
+        draw_ctx.rect(x1 + dx, y1 + dy, c, c);
+        draw_ctx.fill();
+    }
+    let sx = a * scale_side_x;
+    let sy = a * scale_side_y;
+    draw_ctx.fillStyle = COLOR.REPEATER_SIDE_INSERTION;
+    for(let dx of [0, a-sx]) {
+        draw_ctx.beginPath();
+        draw_ctx.rect(x1 + dx, y1 + (a-sy)/2, sx, sy);
+        draw_ctx.fill();
+    }
+
+    // редстоун "пыль"
+    let A2  = a*scale_dust_base;
+    let H2  = a*scale_dust_h;
+    let dh2 = a*scale_dust_lift;
+    draw_ctx.fillStyle  = clr;
+    draw_ctx.strokeStyle = COLOR.REPEATER_DUST_BORDER;
+    draw_ctx.lineWidth = 1;
+    draw_ctx.beginPath();
+    draw_ctx.rect(x1 + (a-A2)/2, y1 + a - dh2 - H2, A2, H2);
+    draw_ctx.fill();
+    draw_ctx.stroke();
+
+    // редстоун "факелы"
+    let r = a*scale_radius;
+    draw_ctx.fillStyle = clr;
+    draw_ctx.beginPath();
+    draw_ctx.arc(x1 + a/2, y1 + (1 - scale_y1)*a, r, 0, 2*Math.PI);
+    draw_ctx.fill();
+    draw_ctx.stroke();
+    draw_ctx.beginPath();
+    draw_ctx.arc(x1 + a/2, y1 + a - dh2 - H2 + pos*H2, r, 0, 2*Math.PI);
+    draw_ctx.fill();
+    draw_ctx.stroke();
+}
+
+
+function lever_calc_max_angle(H, A, r) {
+    // sin(alpha) = ( A r + H sqrt(A^2 + H^2 - r^2) ) / ( A^2 + H^2 )
+    
+    const C1 = A*A + H*H
+    return Math.PI/2 - Math.asin( ( A*r + H * Math.sqrt(C1 - r*r) ) / C1 );
+}
+
+
+// корпус рычага
+// pos - доступные углы (значения из [-1, +1])
+function draw_pre_lever(draw_ctx, a, x1, y1, clr, pos, hd, h2, type_wood) {
+    // hd - отступ от низа клетка
+    // h2 - высота "корпуса" рычага
+
+    // уфф, просто за хардкожу имена... (какое мучение)
+    const  b = 0.6, k = 0.2*b;
+    const h1 = 0.58*h2;
+    const  p = 0.85*h2;
+
+    const  c = 0.5*h1, d = 1.2*k, l = 0.6;  // для деревяшки влево/вправо
+    // для деревяшки вверх/вниз - захаркоженно ниже
+
+
+    let max_angle = -1;
+    if( max_angle ) max_angle = lever_calc_max_angle( h2-c, b/2-k, d/2 );
+
+    let x2 = x1 + a * (1-b)/2;
+    let x3 = x2 + a * k;
+    let x5 = x1 + a * (1+b)/2;
+    let x4 = x5 - a * k;
+
+    let y2 = y1 + a * (1-hd-h2);
+    let y3 = y1 + a * (1-hd-p);
+    let y4 = y1 + a * (1-hd-h1);
+    let y5 = y1 + a * (1-hd);
+    let yc = y1 + a * (1-hd-c);
+
+    console.log((Math.max(x2,x3,x4,x5)-x1)/a, (Math.max(y2,y3,y4,y5)-y1)/a);
+
+    // редстоун "отметка"
+    draw_ctx.beginPath();
+    draw_ctx.rect(x3, y3, x4-x3, y4-y3);
+    draw_ctx.fillStyle   = clr;
+    draw_ctx.strokeStyle = COLOR.REPEATER_DUST_BORDER;
+    draw_ctx.lineWidth   = 1;
+    draw_ctx.fill();
+    draw_ctx.stroke();
+
+
+    // сам рычаг (деревяшка) (черенок лол)
+    if( type_wood == 0 ) lever_wood_left_right(draw_ctx, x1 + a/2, yc, clr, pos*max_angle, a*l, a*d);
+    if( type_wood == 1 ) {
+        let r = (pos+1)/2;
+        let yy = a*( (1-r)*0.24  + r*0.1  )
+        let b2 = a*( (1-r)*0.24  + r*0.14 );
+        let b1 = a*( (1-r)*0.125 + r*0.14 );
+        let h  = a*( (1-r)*0.33  + r*0.5  );
+        lever_wood_up_down(draw_ctx, x1 + a/2, y4, clr, h, b2, yy, b1);
+    }
+
+
+    // корпус рычага
+    draw_ctx.fillStyle = COLOR.LEVER_BODY;
+    draw_ctx.beginPath();
+    draw_ctx.rect(x2, y2, x3-x2, y5-y2);
+    draw_ctx.rect(x4, y2, x5-x4, y5-y2);
+    draw_ctx.rect(x3, y4, x4-x3, y5-y4);
+    draw_ctx.fill();
+
+    // const border_h = 0.5*a*k;
+    // draw_ctx.fillStyle =  COLOR.REPEATER_BORDER;
+    // draw_ctx.beginPath();
+    // draw_ctx.rect(x2, y2, x3-x2, border_h);
+    // draw_ctx.rect(x3 - border_h, y2, border_h, y4-y2);
+    // draw_ctx.rect(x3 - border_h, y4, x4-x3 + 2*border_h, border_h);
+    // draw_ctx.rect(x4, y2, border_h, y4-y2);
+    // draw_ctx.rect(x4, y2, x5-x4, border_h);
+    // draw_ctx.rect(x5 - border_h, y2, border_h, y5-y2);
+    // draw_ctx.rect(x2,  y5-border_h, x5-x2, border_h);
+    // draw_ctx.rect(x2, y2, border_h, y5-y2);
+    // draw_ctx.fill();
+
+
+    draw_ctx.fillStyle = COLOR.REPEATER_DUST_BORDER;
+    draw_ctx.beginPath();
+    draw_ctx.moveTo(x2, y2);
+    draw_ctx.lineTo(x3, y2);
+    draw_ctx.lineTo(x3, y4);
+    draw_ctx.lineTo(x4, y4);
+    draw_ctx.lineTo(x4, y2);
+    draw_ctx.lineTo(x5, y2);
+    draw_ctx.lineTo(x5, y5);
+    draw_ctx.lineTo(x2, y5);
+    draw_ctx.closePath();
+    draw_ctx.stroke();
+}
+
+function lever_wood_left_right(draw_ctx, xc, yc, clr, angle, l, d) {
+    // angle - угол от вертикали
+    //   l   - длинна палки
+    //   d   - ширина палки
+    draw_ctx.save();  // кринжовая смена координат
+    draw_ctx.translate(xc, yc);
+    draw_ctx.rotate(3*Math.PI/2 + angle);
+    draw_ctx.fillStyle   = COLOR.WOOD;
+    draw_ctx.strokeStyle = COLOR.REPEATER_DUST_BORDER;
+    draw_ctx.lineWidth   = 1;
+    draw_ctx.beginPath();
+    draw_ctx.rect(0, -d/2, l, d);
+    draw_ctx.fill();
+    draw_ctx.stroke();
+    draw_ctx.restore();
+}
+
+function lever_wood_up_down(draw_ctx, xc, yc, clr, h, b2, yy, b1) {
+    // h  - растояние (по y) до центра квадрата
+    // b2 - ширина черенка 
+    // yy - высота черенка
+    // b1 - ширина при основании
+    draw_ctx.fillStyle   = COLOR.WOOD;
+    draw_ctx.strokeStyle = COLOR.REPEATER_DUST_BORDER;
+
+    // "ножка"
+    draw_ctx.beginPath();
+    draw_ctx.moveTo(xc - b2/2, yc - h + yy/2);
+    draw_ctx.lineTo(xc + b2/2, yc - h + yy/2);
+    draw_ctx.lineTo(xc + b1/2, yc);
+    draw_ctx.lineTo(xc - b1/2, yc);
+    draw_ctx.closePath();
+    draw_ctx.fill();
+    draw_ctx.stroke();
+
+    // (квадрат - раньше был) -> прямоугольник
+    draw_ctx.beginPath();
+    draw_ctx.rect(xc - b2/2, yc - h - yy/2, b2, yy);
+    draw_ctx.fill();
+    draw_ctx.stroke();
+}
+
+function draw_lever(draw_ctx, a, x1, y1, clr, pos) {
+    const hd = 0.15;  // отступ от низа клетка
+    const h2 = 0.4;
+    draw_pre_lever(draw_ctx, a, x1, y1, clr, pos, hd, h2, 0);
+}
+
+function draw_lever2(draw_ctx, a, x1, y1, clr, pos) {
+    const hd = 0;  // отступ от низа клетка
+    const h2 = 0.4;
+    draw_pre_lever(draw_ctx, a, x1, y1, clr, pos, hd, h2, 1);
+}
+
+function predraw_redstone_icons(clr) {
+    let pictures = {};
+    let i = 0;
+
+    let a = GRINDa;
+
+    // редстоун пыль
+    pictures.dust     = new OffscreenCanvas(a, a);
+    draw_dust    (pictures.dust    .getContext('2d'), a, a/2, a/2, clr, []);
+    
+    // редстоун факел
+    pictures.torch          = new OffscreenCanvas(a+1, a+1);
+    draw_torch   (pictures.torch         .getContext('2d'), a, a/2 +0.5, a/2 +0.5, clr);
+    pictures.torch_to_block = new OffscreenCanvas(a+1, a+1);
+    draw_torch2  (pictures.torch_to_block.getContext('2d'), a, a/2 +0.5, a/2 +0.5, clr);
+
+    // повторитель
+    pictures.repeater = new OffscreenCanvas(a, a);
+    draw_repeater(pictures.repeater.getContext('2d'), a, 0.5, 0.5, clr, 0);
+
+    // рычаг
+    pictures.lever         = new OffscreenCanvas(a+1, a+1);
+    draw_lever   (pictures.lever         .getContext('2d'), a, 0.5, 0.5, clr, -1);
+    pictures.lever_to_block = new OffscreenCanvas(a+1, a+1);
+    // так кривенько (чтобы по умолчанию рычаг прикреплялся к правой стенке) (потому что исторически факел был написан также)
+    ctx_rotate   (pictures.lever_to_block.getContext('2d'), 1,  (a+1)/2, (a+1)/2);
+    draw_lever2  (pictures.lever_to_block.getContext('2d'), a, 0.5, 0.5, clr, -1);
+    ctx_rotate   (pictures.lever_to_block.getContext('2d'), 0);
+
+    return pictures;
+}
+
+let redstone_icons = predraw_redstone_icons(COLOR.RED_OFF);
+
+
+
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+let friendly_for_people_view = 0;  // зафиксировать изображение блока
+const background_img = new Image();
+background_img.src = 'background2.jpg'; //'background.png'; 
+// background_img.src = 'background.png';  // аниме картинка
+
+// рисуем блок
+function draw_block(draw_ctx, from_x1, from_y1, from_a, to_x1, to_y1, to_a) {
+    let XX = 2*GRINDda + GRINDx_quantity * GRINDa, YY = 2*GRINDda + GRINDy_quantity * GRINDa;
+    let scale_x = background_img.width  / XX;
+    let scale_y = background_img.height / YY;
+
+    let xx1 = from_x1 - GRINDx1 + GRINDda, yy1 = from_y1 - GRINDy1 + GRINDda;
+    let xx2 = xx1 + from_a, yy2 = yy1 + from_a;
+
+    // if( xx2 < 0 || yy2 < 0 || XX < xx1 || YY < yy1 ) { xx1 = yy1 = 0; xx2 = yy2 = A; }  // если вышли за зону background_img
+    if( friendly_for_people_view ) { xx1 = yy1 = 0; xx2 = yy2 = from_a; }  // зафиксированно
+
+    // дебильный drawImage - как вообще такие аргументы выбрали???!!!
+    draw_ctx.drawImage(background_img, scale_x*xx1, scale_y*yy1, scale_x*from_a, scale_y*from_a, to_x1, to_y1, to_a, to_a);
+}
+
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+function ctx_rotate(draw_ctx, t, xc = 0, yc = 0) {
+    if( t == 0 || t == 4 ) draw_ctx.setTransform( 1,  0,  0,  1, 0, 0);
+    if( t == 1 ) draw_ctx.setTransform( 0, -1,  1,  0,  xc-yc,  xc+yc);
+    if( t == 2 ) draw_ctx.setTransform(-1,  0,  0, -1,   2*xc,   2*yc);
+    if( t == 3 ) draw_ctx.setTransform( 0,  1, -1,  0,  xc+yc, -xc+yc);
+}
+
+
+
+
+
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// ПОЛЕ
+///////////////////////////////////////////////////////////////////////////////////////////////////
+function new_field(x_quantity, y_quantity) { return new Uint8Array(x_quantity*y_quantity); }
+
+function is_correct_indx(i, j) { return 0 <= i && i < GRINDy_quantity && 0 <= j && j < GRINDx_quantity; }
+
+
+const is_block_elevated = new_field(GRINDx_quantity, GRINDy_quantity);
+
+function is_layered(i, j) {
+    if( !is_correct_indx(i, j) ) return 0;
+    return is_block_elevated[i*GRINDx_quantity + j];
+}
+
+
+// БУДЕМ РАБОТАТЬ ЧЕРЕЗ ОБЁРТКИ (а то пока хз как лучше хранить данные)
+const field_type       = new_field(GRINDx_quantity, GRINDy_quantity);
+const field_rotation   = new_field(GRINDx_quantity, GRINDy_quantity);
+const field_extra_info = new_field(GRINDx_quantity, GRINDy_quantity);
+//  1 - пыль
+//  2 - факел
+//  3 - повторитель
+//  4 - рычаг
+
+
+// i и j - должны быть КОРРЕКТНЫМИ!!!
+function get(i, j) {
+    let pos = i*GRINDx_quantity + j;
+    // let    get_pos_from = (...args) => args.map(a => a[i]);  // кринж?
+    // return get_pos_from(field_type, field_rotation, field_extra_info);
+    
+    return {type: field_type[pos], rotation: field_rotation[pos], extra_info: field_extra_info[pos]};
+}
+
+function repeater_increase_delay(i, j) {
+    let pos = i*GRINDx_quantity + j;
+    field_extra_info[pos] = (field_extra_info[pos] + 1)%4;
+}
+
+function click_on_lever(i, j) {
+    let pos = i*GRINDx_quantity + j;
+    field_extra_info[pos] = 2 - field_extra_info[pos];
+}
+
+
+// это прям хорошая функция
+function calc_dust_connection(i, j) {
+    let connection = [];
+
+    let is_curr_layered = is_layered(i, j);
+    
+    for(let [di, dj] of [[-1, 0], [+1, 0], [0, -1], [0, +1]]) {
+        if( !is_correct_indx(i+di, j+dj) ) continue;
+
+        let is_next_layered  =      is_layered(i+di, j+dj);
+        let {type, rotation, extra_info} = get(i+di, j+dj);
+
+        // примагничивание к другим редстоун пылинкам
+        if( type == 1 ) { connection.push( [dj, di] ); continue; }
+
+        // дальнейшие варинта требуют расположения на одном уровне
+        if( is_curr_layered != is_next_layered ) continue;
+
+        // примагничивание к факелу/рычагу
+        if( type == 2 || type == 4 ) { connection.push( [dj, di] ); continue; }
+        
+        // примагничивание к повторителю (+ с нужной стороны)
+        //     вертикальнoе направление   пылинки: di != 0 && dj == 0
+        //     вертикальнoе положения повторителя: rotation = {0, 2}
+        if( type == 3 && !( (di != 0) ^ (rotation == 0 || rotation == 2) ) ) { connection.push( [dj, di] ); continue; }
+    }
+
+    // "примагничивание" к следующему блоку
+    if( connection.length == 1 && !is_curr_layered ) {
+        let [dj, di] = connection[0];
+        console.log('CHECK: ', di, dj);
+        if( is_layered(i - di, j - dj) ) connection.push( [-dj, -di] );
+    }
+
+    return connection;
+}
+
+
+
+// ЛОЛ: рисование в этой функции полностью копирует redraw_under_cursor_obj (только там для рисования компонент используются иконки)
+// эхх, вот бы всевозможные tile заранее предподсчитать, но пока чето лень с этим возиться
+function draw_tile(i, j) {
+    let {type, rotation, extra_info} = get(i, j);
+
+    let x1 = GRINDx1 + GRINDa*j, y1 = GRINDy1 + GRINDa*i;
+    let xc = x1 + GRINDa/2, yc = y1 + GRINDa/2;
+
+    
+    ctx.font         = 'bold 10px Arial';
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle    = "black";
+    ctx.fillText(String(type) + " " + String(rotation) , x1+10, y1+10);
+
+
+    if( type == 1 ) {  // пыль
+        let connection = calc_dust_connection(i, j);
+        draw_dust(ctx, GRINDa, xc, yc, COLOR.RED_OFF, connection);
+        return;
+    }
+
+    // кринж с рычагом - потому что пока ещё нормально не синхронизированно рисование (типо в каком повороте должны рисовать функции draw_component(...) по умолчанию)
+    if( type == 4 ) rotation = (rotation == 4) ? rotation : (rotation+1)%4;
+
+    ctx_rotate(ctx, rotation, xc, yc);
+
+    if( type == 2 ) {  // факел
+        if( rotation == 4 ) draw_torch (ctx, GRINDa  , xc, yc, COLOR.RED_OFF);  // по центру
+        else                draw_torch2(ctx, GRINDa  , xc, yc, COLOR.RED_OFF);  // к  блоку
+    }
+
+    if( type == 3 ) {  // повторитель
+        draw_repeater(ctx, GRINDa  , x1, y1, COLOR.RED_OFF, extra_info/3);
+    }
+
+    if( type == 4 ) {  // рычаг
+        // пока костыльно:  extra_info из [0, 2] - для рычага
+        let clrr = (extra_info==2 ) ? COLOR.RED_ON : COLOR.RED_OFF;
+        if( rotation == 4 ) draw_lever (ctx, GRINDa  , x1, y1, clrr, extra_info -1);  // по центру
+        else                draw_lever2(ctx, GRINDa  , x1, y1, clrr, extra_info -1);  // к  блоку
+    }
+
+    ctx_rotate(ctx, 0);
+
+    // ctx.fillText(rotation, x1+5, y1+5);
+}
+
+function place_redstone(i, j, type, rotation = 0, extra_info = 0) {
+    let pos = i*GRINDx_quantity + j;
+    field_type      [pos] = type;
+    field_rotation  [pos] = rotation;
+    field_extra_info[pos] = extra_info;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+
+
+
+function last_of(arr) { return arr[arr.length-1]; }
+
+// !!! для определения блоков используется только функция:  is_layered
+function recalc_borders() {
+    let field_is_visited = new Uint8Array(GRINDx_quantity*GRINDy_quantity);
+    let all_circuits = [];
+
+    let show_extra_info = 0;
+
+    function draw_label(x, y, txt, type) {
+        if( !show_extra_info ) return;
+
+        ctx.textAlign    = 'center';
+        ctx.textBaseline = 'middle';
+
+        if( type==-1 ) ctx.fillStyle = 'red';
+        else  ctx.fillStyle = 'black';
+
+        ctx.fillText(txt, x, y);
+        ctx.fill();
+        ctx.stroke();
+    }
+
+    let num = 0, expands_to_outside = 0;
+    function dfs_visit(i, j, type = -1) {
+        draw_label(GRINDx1 + (j+1/2)*GRINDa, GRINDy1 + (i+1/2)*GRINDa, num, type);
+
+        if( type == -1 ) type = is_layered(i, j);
+        field_is_visited[i*GRINDx_quantity + j] = 1;
+
+        let dij = (type == 0) ? [ [-1, 0], [0, -1], [0, +1], [+1, 0] ] : [ [-1, -1], [-1, 0], [-1, +1], [0, -1], [0, +1], [+1, -1], [+1, 0], [+1, +1] ];
+        for(let [di, dj] of dij) {
+            let pos = (i+di)*GRINDx_quantity + (j+dj);
+            if( !is_correct_indx(i+di, j+dj) ) expands_to_outside = 1;
+            else if( !field_is_visited[pos] && is_layered(i+di, j+dj) == type ) dfs_visit(i+di, j+dj, type);
+        }
+    }
+
+    let prev_draw_x, prev_draw_y;
+    function draw_signal(circuit_elem) {
+        let [ci, cj, quad] = circuit_elem;
+        let x1 = GRINDx1 + cj*GRINDa, y1 = GRINDy1 + ci*GRINDa;
+        let x2 = x1 + GRINDa, y2 = y1 + GRINDa;
+
+        let draw_signals = show_extra_info;
+
+        let x, y;
+        ctx.beginPath();
+        ctx.strokeStyle = 'black';
+        ctx.lineWidth = 1;
+        
+        let coef = 1;
+        if( quad == 0 ) { x = x1+coef*GRINDda; y = y1+coef*GRINDda; if(draw_signals) (x1, y1, x, y, 1); }
+        if( quad == 1 ) { x = x2-coef*GRINDda; y = y1+coef*GRINDda; if(draw_signals) draw_segment(x2, y1, x, y, 1); }
+        if( quad == 2 ) { x = x2-coef*GRINDda; y = y2-coef*GRINDda; if(draw_signals) draw_segment(x2, y2, x, y, 1); }
+        if( quad == 3 ) { x = x1+coef*GRINDda; y = y2-coef*GRINDda; if(draw_signals) draw_segment(x1, y2, x, y, 1); }
+
+        if(draw_signals) {
+            ctx.arc(x, y, 5, 0, 2*Math.PI);
+            ctx.fillStyle = 'red';
+            ctx.fill();
+            ctx.stroke();
+        }
+
+        // граничные линии
+        ctx.beginPath();
+        // ctx.strokeStyle = 'blue';
+        // ctx.lineWidth = 5;
+        if( prev_draw_x != -1 ) draw_segment(x, y, prev_draw_x, prev_draw_y, 1);
+        prev_draw_x = x; prev_draw_y = y;
+        ctx.stroke();
+
+    }
+    function draw_circuit(circuit) {
+        prev_draw_x = prev_draw_y = -1;
+        for(let i = 0; i < circuit.length; i++) draw_signal( circuit[i] );
+        draw_signal( circuit[0] );
+    }
+
+    // строит границу множества
+    function border_traversal(i, j, sett = 1) {
+        console.log('CIRCUIT START FROM: ', i, j, (sett==0) ? " (INNER)" : " (BORDER)");
+
+        let [ci, cj, quad] = (sett == 0) ? [i, j, 0] : [i-1, j-1, 2];
+        let direction = (sett == 0) ? [+1, 0] : [0, +1]; 
+        
+        let [ci0, cj0, quad0] = [ci, cj, quad];
+        let circuit = [ [ci0, cj0, quad0] ];
+        
+        let quad_dij = [ [0, -1], [-1, 0], [0, +1], [+1, 0] ];
+        for(let iter = 0; iter < 1000; iter++) {
+            let pci = ci, pcj = cj, pquad = quad;  // приставка "p" - типо "prev"
+
+            let [di, dj] = quad_dij[quad];
+            let new_direction;
+            if( !is_layered(ci + di, cj + dj) ) { 
+                new_direction = quad_dij[quad];
+                quad = (quad+1)%4;
+                ci += di; cj += dj;
+            } else {
+                quad = (quad-1 + 4)%4;
+                new_direction = quad_dij[quad];
+            }
+
+            if( direction != new_direction ) {
+                direction  = new_direction;
+                circuit.push( [pci, pcj, pquad] );
+            }
+
+            if( ci == circuit[0][0] && cj == circuit[0][1] && quad == circuit[0][2] ) break;
+        }
+        
+        all_circuits.push( circuit );
+
+        draw_circuit(circuit);
+    }
+
+
+    // отмечаем "наружную" территорию
+    // for(let i = 0; i < GRINDy_quantity; i++) {
+    //     if( !field_is_visited[i*GRINDx_quantity] && !is_layered(i, 0) )  { dfs_visit(i, 0); num++; }
+    //     if( !field_is_visited[i*GRINDx_quantity + (GRINDx_quantity-1)] && !is_layered(i, GRINDx_quantity-1) )  { dfs_visit(i, GRINDx_quantity-1); num++; }
+    // }
+    // for(let j = 0; j < GRINDx_quantity; j++) {
+    //     if( !field_is_visited[j]  && !is_layered(0, j) )  { dfs_visit(0, j); num++; }
+    //     if( !field_is_visited[(GRINDy_quantity-1)*GRINDx_quantity + j] && !is_layered(GRINDy_quantity-1, j) )  { dfs_visit(GRINDy_quantity-1, j); num++; }
+    // }
+    // А зачем?? Аааа, это чтобы гарантировть что мы будем с нужного места обходить множество
+    // и лол, как будто достаточно проверить только угол (0, 0)
+    // if( !field_is_visited[0]  && !is_layered(0, 0) )  { dfs_visit(0, 0); num++; }
+    // - аа, если не делать по честному всю границу, то мы левое верхнее множество можем обходить дважды
+    // кароче, чтобы коректно определять полости используется:  expands_to_outside
+
+    // поиск неотмеченных территорий и нахождение их "контуров"
+    for(let i = 0; i < GRINDy_quantity; i++)
+    for(let j = 0; j < GRINDx_quantity; j++) {
+        let pos = i*GRINDx_quantity + j;
+        if( field_is_visited[pos] ) continue;
+        expands_to_outside = 0;
+        dfs_visit(i, j); num++;
+        let type = is_layered(i, j);
+        if( type == 1 || expands_to_outside == 0 ) border_traversal(i, j, type);
+    }
+}
+
+
+
+
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// ОТРИСОВКА
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+
+// СОЗДАЁМ МАСКУ
+const offscreen_for_background = new OffscreenCanvas(layer1.width, layer1.height);
+const background_mask_ctx      = offscreen_for_background.getContext('2d');
+
+let my_canvas = layer1;
+
+// эх, пока так, кринжовенько
+let Y_GRIND_down = GRINDy1 + GRINDy_quantity*GRINDa + GRINDda + 10;
+
+function draw_grind(x1, y1, a, x_quantity, y_quantity) {
+    ctx.clearRect(0, 0, my_canvas.width, Y_GRIND_down); // my_canvas.height);
+
+    // TTT();  // для теста
+
+    // рисуем сетку (удивительно)
+    let x2 = x1 + a*x_quantity, y2 = y1 + a*y_quantity
+
+    
+    // рисуем редстоун на полу
+    for(let i = 0; i < y_quantity; i++)
+    for(let j = 0; j < x_quantity; j++)
+        if( !is_layered(i, j) ) draw_tile(i, j);
+
+
+    for(let i = 0; i < y_quantity; i++)
+    for(let j = 0; j < x_quantity; j++) {
+        let pos = i*x_quantity+j;
+        // if( !field[pos] && redstone_sheme[pos] ) {
+        //     // ctx.rect(x1 + j*a, y1 + i*a, a/4, a/4);
+        //     // ctx.fillStyle='purple';
+        //     // ctx.fill();
+        //     ctx.drawImage(redstone_connection[redstone_sheme_extra_info[pos]], x1 + j*a, y1 + i*a, a, a);
+        // }
+    }
+
+
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for(let i = 0; i <= x_quantity; i++) {
+        ctx.moveTo(x1 + i*a, y1);
+        ctx.lineTo(x1 + i*a, y2);
+    }
+    for(let i = 0; i <= y_quantity; i++) {
+        ctx.moveTo(x1, y1 + i*a);
+        ctx.lineTo(x2, y1 + i*a);
+    }
+    ctx.strokeStyle = 'black';
+    ctx.stroke();
+
+
+    // делаем МАСКУ
+    background_mask_ctx.clearRect(0, 0, my_canvas.width, my_canvas.height);
+
+    for(let i = 0; i < y_quantity; i++)
+    for(let j = 0; j < x_quantity; j++)
+        if( is_layered(i, j) ) background_mask_ctx.fillRect(x1 + j*a - GRINDda, y1 + i*a - GRINDda, a + 2*GRINDda, a + 2*GRINDda);
+ 
+    // картинка по маске
+    background_mask_ctx.globalCompositeOperation = "source-in";
+    background_mask_ctx.drawImage(background_img, x1-GRINDda, y1-GRINDda, a*x_quantity + 2*GRINDda, a*y_quantity + 2*GRINDda);
+    
+    // Фановые эффекты получаются
+    // background_mask_ctx.globalCompositeOperation = "multiply";
+    // background_mask_ctx.drawImage(background_img, x1, y1, a*x_quantity, a*y_quantity);
+    // background_mask_ctx.globalCompositeOperation = "color-burn";// "color-dodge";
+    // background_mask_ctx.drawImage(background_img, x1-2*GRINDda, y1-2*GRINDda, a*x_quantity+ 4*GRINDda, a*y_quantity+ 4*GRINDda);
+    
+    background_mask_ctx.globalCompositeOperation = "source-over";
+
+    // Накладываем поверх основного canvas
+    ctx.drawImage(offscreen_for_background, 0, 0);
+
+
+    for(let i = 0; i < y_quantity; i++)
+    for(let j = 0; j < x_quantity; j++) {
+        let pos = i*x_quantity+j;
+        // if( field[pos] && redstone_sheme[pos] ) {
+        //     // ctx.rect(x1 + j*a, y1 + i*a, a/4, a/4);
+        //     // ctx.fillStyle='purple';
+        //     // ctx.fill();
+        //     ctx.drawImage(redstone_connection[redstone_sheme_extra_info[pos]], x1 + j*a - GRINDda, y1 + i*a - GRINDda, a + 2*GRINDda, a + 2*GRINDda);
+        // }
+    }
+
+
+    
+
+
+
+    // отрисовка клеток в "приподнятом" множестве
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'black';
+    ctx.beginPath();
+    for(let i = 0; i < y_quantity; i++)
+    for(let j = 0; j < x_quantity; j++)
+        if( is_layered(i, j) ) {
+            let xx1 = x1 + j*a, yy1 = y1 + i*a;
+            draw_segment(xx1, yy1, xx1+a, yy1, 1);
+            draw_segment(xx1, yy1, xx1, yy1+a, 1);
+            if( j+1 >= x_quantity || !is_layered(i, j+1) ) draw_segment(xx1+a, yy1, xx1+a, yy1+a, 1);
+            if( i+1 >= y_quantity || !is_layered(i+1, j) ) draw_segment(xx1, yy1+a, xx1+a, yy1+a, 1);
+        }
+    ctx.stroke();
+    
+    
+
+
+    // отрисовка границ "приподнятых" множеств
+    recalc_borders();
+
+
+    // рисуем редстоун на блоках
+    for(let i = 0; i < y_quantity; i++)
+    for(let j = 0; j < x_quantity; j++)
+        if( is_layered(i, j) ) draw_tile(i, j);
+    
+}
+
+
+function draw_segment(x1, y1, x2, y2, moving = 0) { 
+    if( moving ) ctx.moveTo(x1, y1); 
+    else         ctx.lineTo(x1, y1); 
+    ctx.lineTo(x2, y2); 
+}
+
+function which_covered(x, y, allow_overlap = 0) {
+    // если находимся на раскрытой части то возвращаем [-1, -1]
+
+    if( x < GRINDx1 || y < GRINDy1 ) return [-1, -1];
+
+    let i = Math.trunc( (y - GRINDy1) / GRINDa ), j = Math.trunc( (x - GRINDx1) / GRINDa );
+
+    if( !is_correct_indx(i, j) ) return [-1, -1];
+
+    // проверка что находимся на непокрытом соседним блоке месте
+    if( (allow_overlap == 0) && !is_layered(i, j) ) {
+        let x1 = GRINDx1 + j*GRINDa, y1 = GRINDy1 + i*GRINDa, x2 = x1+GRINDa, y2 = y1+GRINDa;
+        let in_up = (y <= y1+GRINDda), in_bottom = (y2-GRINDda <= y), in_left = (x <= x1+GRINDda), in_right = (x2-GRINDda <= x);
+        
+        if( in_up     && is_layered(i-1, j) ) return [-1, -1];
+        if( in_bottom && is_layered(i+1, j) ) return [-1, -1];
+        if( in_left   && is_layered(i, j-1) ) return [-1, -1];
+        if( in_right  && is_layered(i, j+1) ) return [-1, -1];
+
+        if( in_up     && in_left  && is_layered(i-1, j-1) ) return [-1, -1];
+        if( in_up     && in_right && is_layered(i-1, j+1) ) return [-1, -1];
+        if( in_bottom && in_left  && is_layered(i+1, j-1) ) return [-1, -1];
+        if( in_bottom && in_right && is_layered(i+1, j+1) ) return [-1, -1];
+    }
+
+    return [j, i];
+}
+
+
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// МЫШКА
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+// показывает к какой клетке ближе текущее положение (например используется для прикрепления редстоун факела)
+// возвращает две ближащие грани (числа из {4, 0, 1, 2, 3}),  4 - значит что нет прикрепляемых блоков
+const border_cross_scale = 0.33;
+function near_side(x, y) {
+    let [j, i] = which_covered(mouse_x, mouse_y, 1);
+
+    if( i == -1 ) return [4, 4];
+    
+    let  x1 = GRINDx1 + GRINDa*j, y1 = GRINDy1 + GRINDa*i;
+    let dx1 = mouse_x - x1, dy1 = mouse_y - y1;
+    let dx2 = GRINDa - dx1, dy2 = GRINDa - dy1;
+    
+    // оххх, слово "restricted" - асоциируется только с restricted Hartry-Fock
+    let limit_distance = border_cross_scale * GRINDa;
+    const A = [[dx2, 0], [dy1, 1], [dx1, 2], [dy2, 3], [limit_distance, 4], [limit_distance, 4]]; // <- имбово с добавлением элемента [limit_distance, 4]
+    // какой кринж, js не может нормально сортировать.....
+    A.sort( (a, b) => (a[0] - b[0]) || (a[1] - b[1]) );  // аналог сортировки pair из c++
+    
+    return [ A[0][1], A[1][1] ];
+}
+
+
+// НАКОНЕЦ ПРОВОДИМ УНИФИКАЦИЮ: curr_showed_obj и type (из матрицы) - наконец совпадают!!!
+let curr_showed_obj = 0;
+//  -1 - блок
+//   0 - ничего
+//   1 - пыль
+//   2 - факел
+//   3 - повторитель
+//   4 - рычаг
+
+
+// на повороты
+let     auto_rotation =   0 ;
+let possible_rotation =  [0, 1, 2, 3];
+let     curr_rotation =   0 ;
+let     curr_cell_pos = [-1, -1];
+
+
+let mouse_x = WW/2, mouse_y = HH/2;
+let mouse_in_inventory = 0;
+
+// <- по идеи бы убрать из redraw_under_cursor_obj проверку находится ли курсор в зоне инвентаря и перенести эту проверку перед вызовом (или глобальную переменную задать - рил! у нас же всё это состоянии мышки)
+function update_mouse_pos(new_x, new_y) {
+    if( mouse_x == new_x && mouse_y == new_y ) return;
+    mouse_x = new_x, mouse_y = new_y;
+    mouse_in_inventory = is_in_inventory_block(mouse_x, mouse_y);
+}
+
+
+// начальные координаты мыши? (ай, также не получается узнать координаты мыши при запуске страницы)
+// let is_init_mouse = -1;
+// my_canvas.addEventListener('mouseenter', (event) => {
+//     if( is_init_mouse != -1 ) return;
+//     is_init_mouse = 1;
+//     mouse_x = event.offsetX, mouse_y = event.offsetY;
+// });
+
+
+
+// например к каким блокам можно прикрепить факел/рычаг
+function calc_possible_rotations(i, j) {
+    if( i == -1 || is_layered(i, j) ) return [4];
+
+    // находим возможные положения факела
+    possible_rotations = [4];
+    for(let [di, dj, side] of [ [0, +1, 0], [-1, 0, 1], [0, -1, 2], [+1, 0, 3] ]) {
+        if( is_layered(i+di, j+dj) ) possible_rotations.push(side);
+    }
+
+    // особый случай: [4, 0, 3] или [4, 0, 1, 3] или [4, 0, 2, 3]
+    // ай, чего выдумывать (ну и кринж, в js нельзя нормально сравнить массивы)
+    let l = possible_rotations.length;
+    if( 3 <= l && l <= 4 && possible_rotations[1] == 0 && possible_rotations[l-1] == 3 ) {
+        if( l == 3 ) possible_rotations =  [4, 3, 0];
+        else         possible_rotations = (possible_rotations[2] == 1) ? [4, 3, 0, 1] : [4, 2, 3, 0];
+    }
+    
+    return possible_rotations;
+}
+
+// СДЕЛАТЬ БЫ ТУТ:  как в RBM_click_on, чтобы:
+//      if( same_cell ) return; 
+function redraw_under_cursor_obj(which = curr_showed_obj) {
+    above_ctx.clearRect(0, 0, WW, HH);
+    if( mouse_x < 0 || mouse_x > WW || mouse_y < 0 || mouse_y > HH ) return;
+
+    // при наведении курсора в зону инвентаря - не отображать предмет под курсором
+    if( mouse_in_inventory ) {
+        console.log('skip redraw_under_cursor_obj [in inventory]');
+        return;
+    }
+    
+    if( which == 0 ) return;  // воздух
+
+    // рисуем редстоун компонент
+    if( which > 0 ) {
+        let a = redstone_icons.dust.width, b = redstone_icons.dust.height;
+
+        let [j, i] = which_covered(mouse_x, mouse_y, 1);
+
+        if( which == 1 ) {  // редстоун пыль
+            let connection = calc_dust_connection(i, j);
+            draw_dust(above_ctx, a, mouse_x, mouse_y, COLOR.RED_OFF, connection);
+            return;
+        }
+
+
+        // выполняем только для факела/рычага (для них всегда possible_rotation[0] == 4)
+        // если сменили клетку  ->  пересчитываем возможные повороты
+        if( (possible_rotation[0] == 4) && (curr_cell_pos[0] != i || curr_cell_pos[1] != j) ) {
+            curr_cell_pos     = [i, j];
+            possible_rotation = calc_possible_rotations(i, j);
+            curr_rotation = 0;
+            auto_rotation = 1;
+        }
+
+        if( auto_rotation ) {
+            let [suggest1, suggest2] = near_side(mouse_x, mouse_y);
+            
+            // аахаха, js-овские хаки ыхыых, этот приятно даже выгдядит (ахах, ну конечно, кажется он не работает)
+            // в итоге такое убожество (потому что indexOf в случае неудачи выводит -1):
+            curr_rotation = ( (possible_rotation.indexOf(suggest1)+1) || (possible_rotation.indexOf(suggest2)+1) || (curr_rotation+1) ) - 1;
+            // мб тут в случае если не нашлись suggest делать расположение в центр, а не сохранять прошлое значение curr_rotation
+            // до этого из-за этого была бага, но сейчас (пока мы живём в 2D пространстве) нет разницы менять или нет
+        }
+
+        let icon_to_draw;
+
+        if( which == 3 ) {  // повторитель
+            icon_to_draw = redstone_icons.repeater;
+        }
+
+        if( which == 4 ) {  // рычаг
+            // располагаем рычаг по центру / прикрепляем к блоку
+            icon_to_draw = (curr_rotation == 0) ? redstone_icons.lever : redstone_icons.lever_to_block;
+        }
+
+        if( which == 2 ) {  // факел
+            // располагаем факел по центру / прикрепляем к блоку
+            icon_to_draw = (curr_rotation == 0) ? redstone_icons.torch : redstone_icons.torch_to_block;
+        }
+        
+        ctx_rotate(above_ctx, possible_rotation[curr_rotation], mouse_x, mouse_y);  // поворот
+        above_ctx.drawImage(icon_to_draw, mouse_x - a/2, mouse_y - b/2);
+        ctx_rotate(above_ctx, 0);
+        return;
+    }
+
+    // рисуем блок
+    {
+        let a  = 2*GRINDda + GRINDa;
+        let x1 = mouse_x - a/2 + 0.5, y1 = mouse_y - a/2 + 0.5;
+        
+        let [j, i] = which_covered(mouse_x, mouse_y);
+
+        if( !is_layered(i, j) ) {
+            draw_block(above_ctx, x1, y1, a, x1, y1, a);
+        }
+
+        // рамка вокруг блока
+        above_ctx.lineWidth   = 1;
+        above_ctx.strokeStyle = 'black';
+        above_ctx.strokeRect(x1, y1, a, a);
+    }
+}
+
+
+document.addEventListener('mousemove', (event) => {
+    update_mouse_pos(event.offsetX, event.offsetY);
+
+    // если анимация прогрессбара законичилась то только перетаскиваем иконку (это перерисовывается в requestAnimationFrame)
+    if( is_phase_after_animation ) return;
+
+    
+    // сдвинули курсор от зажимаемой иконки
+    if( first_pressed_inventory_icon > 1 && mouse_in_inventory != pressed_inventory_icon) {
+        pressed_inventory_icon = mouse_in_inventory;
+        if( pressed_inventory_icon > 1 ) {  // считаем что начинаем зажимать другую иконку (подобно повторителю при зажатой ПКМ)
+            requestAnimationFrame(start_animation_load_circle);
+        }
+    }
+
+    // если окажется mouse_in_inventory, то функция redraw_under_cursor_obj только очистит холст layer2 и сразу выйдет
+    redraw_under_cursor_obj();
+    redraw_inventory(curr_showed_obj);  // только ради упоротых блоков это делается
+
+
+    // по идеи мышка на иконке и у нас ничего что ниже не меняется
+    if( mouse_in_inventory ) return;
+    
+    if( is_LBM_pressed ) LBM_click_on(mouse_x, mouse_y);
+    if( is_RBM_pressed ) RBM_click_on(mouse_x, mouse_y);
+});
+
+
+let is_LBM_first_click = 1;
+let is_LBM_pressed     = 0;
+let is_LBM_block_confiscate = 0;
+function LBM_click_on(x, y) {
+    let account_border_in_which_covered = (curr_showed_obj > 0);
+    let [j, i] = which_covered(x, y, account_border_in_which_covered);
+
+    if( i == -1 ) { is_LBM_first_click = 0; return; }
+    
+    // Не заменяем уже поставленные блоки
+    // Однако если в руке воздух то всегда заменяем (типо удаляем)
+    if( (curr_showed_obj != 0) && !is_LBM_first_click && get(i, j).type ) return;
+    
+    if( curr_showed_obj == -1 ) {  // размещение блока
+        // чтобы не было что мы в одной ячейке забрали блок и, чуть сместив мышку, обратно его поставили
+        // мы вообще полностью запретим расстановку с зажатым кликом в этом случае
+        if( is_LBM_first_click && is_layered(i, j) ) {
+            is_LBM_block_confiscate = 1;
+            replace_block(i, j);
+        }
+        
+        // после первого клика можем только наращивать (поднимать) уровень
+        if( !is_LBM_block_confiscate && !is_layered(i, j) ) replace_block(i, j);
+    }
+    is_LBM_first_click = 0;
+
+    // конечно для пыли и воздуха мы тут тоже записываем поворот (чего не должно быть) - ну да ладно, какая разница пока это нигде не используется
+    if( 0 <= curr_showed_obj && curr_showed_obj <= 4 ) {
+        place_redstone(i, j, curr_showed_obj, possible_rotation[curr_rotation] );
+    }
+
+    // по сути это нужно только если у нас в руках блок - но ладно уж, пускай всегда вызывается
+    redraw_under_cursor_obj();
+
+    redraw();
+}
+
+// От deepseek: (чтобы ограничить частоту перерисовок)
+//     let redrawScheduled = false;
+//     function scheduleRedraw() {
+//         if (!redrawScheduled) {
+//             redrawScheduled = true;
+//             requestAnimationFrame(() => {
+//                 redraw();
+//                 redrawScheduled = false;
+//             });
+//         }
+//     }
+function redraw() {
+    // ctx.clearRect(0, 0, my_canvas.width, my_canvas.height);  - а нафига это тут? (оставил для исторической справки)
+    console.log('===================================');
+    draw_grind(GRINDx1, GRINDy1, GRINDa, GRINDx_quantity, GRINDy_quantity);
+}
+
+
+
+
+// ================================================================================================
+// Чтобы можно было зажать ПКМ на повторителе и он бы каждые dt увеличивал задержку
+// ================================================================================================
+
+// !!! каждый раз, когда у нас нет зажатого repeater мы должны вызвать RBM_delete_alarm
+
+let RBM_waiter_final_time;
+let RBM_is_waiter_created  = 0;
+let RBM_is_waiter_canceled = 0;
+function RBM_repeater_waiter() {
+    let curr_time = Date.now();
+    if( curr_time < RBM_waiter_final_time ) { setTimeout(RBM_repeater_waiter, RBM_waiter_final_time - curr_time); return; }
+    RBM_is_waiter_created = 0;
+
+    if( RBM_is_waiter_canceled ) return;
+
+    // моя функция (необходимое время успешно прошло)
+    // уффф, какой калхоз эти prev_RBM_click_cell
+    RBM_click_on_repeater(prev_RBM_click_cell[0], prev_RBM_click_cell[1]);
+}
+
+// по хорошему:  время вызова T  -  может только увеличиваться
+function RBM_create_alarm_at(T, func_to_call = 0) {
+    RBM_waiter_final_time  = T;
+    RBM_is_waiter_canceled = 0;  // func_to_call
+    if( !RBM_is_waiter_created ) RBM_repeater_waiter();
+}
+
+// по зорошему бы назвать:  unclick_all_repeater
+function RBM_delete_alarm() { RBM_is_waiter_canceled = 1; }
+
+
+// таймеры запускаются только на репиторах
+let RBM_repeater_delay = 500;
+function RBM_click_on_repeater(i, j) {
+    repeater_increase_delay(i, j);
+    redraw();
+
+    // для зажатия ПКМ на репиторе
+    RBM_create_alarm_at(Date.now() + RBM_repeater_delay);
+}
+
+
+let is_RBM_pressed = 0;
+let prev_RBM_click_cell = [-1, -1];
+function RBM_click_on(x, y) {
+    let [j, i] = which_covered(x, y);
+
+    let same_cell = (prev_RBM_click_cell[0] == i) && (prev_RBM_click_cell[1] == j);
+    if( same_cell ) return;  // <- лул, гениальная строчка, долго над её придумыванием думал (без иронии)
+
+    console.log("new cell!! ", i, j);
+    prev_RBM_click_cell = [i, j];
+
+    // ааа, какая лапша (чтобы: если мы поменяли ячейку и текущая ячейка не повторитель - то отменяем счётчик)
+    if( i == -1 ) { RBM_delete_alarm(); return; }
+
+    let type = get(i, j).type;
+
+    if( type == 3 ) RBM_click_on_repeater(i, j); // нажали на повторитель
+    else            RBM_delete_alarm();
+
+    // уффф, лапша (потому-что в RBM_click_on_repeater уже встроен redraw)
+    if( type == 4 ) { click_on_lever(i, j); redraw(); }    // нажали на рычаг
+}
+
+
+
+
+document.addEventListener('mouseup', (event) => {
+    update_mouse_pos(event.offsetX, event.offsetY);
+
+    if( event.button == 0 ) {  // ЛКМ
+        // Весь ЛКМ был "кликом" на иконку (иконки нумеруются с двух)
+        if( !is_phase_after_animation && first_pressed_inventory_icon > 1 && mouse_in_inventory == first_pressed_inventory_icon ) {
+            // А клавиши в хотбаре начинаются с '1' )))
+            let icon_key = String(first_pressed_inventory_icon-1);
+            console.log('change to: ', icon_key);
+            // ай, пофиг на эффективность, всё равно это типо не частое действие
+            curr_showed_obj = KEY_of_component.indexOf( icon_key ) - 1;
+            change_showed_obj_to(curr_showed_obj);
+        }
+
+        // КОНЕЦ перетаскивания иконки инвентаря
+        if( is_phase_after_animation ) {
+            finish_icon_drag();
+        }
+
+        first_pressed_inventory_icon = pressed_inventory_icon = 0;
+    }
+
+    if( event.button == 0 ) is_LBM_pressed = 0;
+    
+    if( event.button == 2 ) {  // ПКМ
+        is_RBM_pressed = 0;
+        RBM_delete_alarm();
+    }
+});
+
+document.addEventListener('mousedown', (event) => {
+    // потому что мы можем в самом начале не двигать мышку и тогда не понятно какие mouse_x, mouse_y, но при этом можно кликнуть
+    update_mouse_pos(event.offsetX, event.offsetY);
+
+
+    if( event.button == 0 ) {  // ЛКМ
+        first_pressed_inventory_icon = pressed_inventory_icon = mouse_in_inventory;
+
+        if( pressed_inventory_icon > 1 ) {
+            requestAnimationFrame(start_animation_load_circle);
+        }
+
+        if( pressed_inventory_icon ) return;
+    }
+
+
+    let x = event.offsetX, y = event.offsetY;
+
+    if( event.button == 0 ) {  // ставим блок
+        // первый клик ЛКМ
+        is_LBM_first_click = 1;
+        is_LBM_pressed     = 1;
+        is_LBM_block_confiscate = 0;
+
+        LBM_click_on(x, y);
+    }
+
+    if( event.button == 2 ) {  // ПКМ
+        is_RBM_pressed = 1;
+        prev_RBM_click_cell = [-1, -1]
+
+        RBM_click_on(x, y);
+    }
+
+    // else {  // ставим редстоун
+    //     if( nx != -1 ) {
+    //         replace_dust(ny, nx);
+    //     }
+    // }
+
+    // ctx.clearRect(0, 0, my_canvas.width, my_canvas.height);
+    // console.log('===================================');
+    // draw_grind(GRINDx1, GRINDy1, GRINDa, GRINDx_quantity, GRINDy_quantity);
+});
+
+
+
+layer2.addEventListener('contextmenu', e => e.preventDefault());
+
+
+
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// КЛАВИАТУРА (текущий выбранный блок)
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+// можно было бы по несколько клавиш на блок - но да ладно
+// И конечно: очень опасный порядок, который не надо пока трогать
+let KEY_block    = '1'     ;  //,  id_of_block    = -1;
+let KEY_air      = 'Escape';  //,  id_of_air      =  0;
+let KEY_redstone = '2'     ;  //,  id_of_redstone =  1;
+let KEY_torch    = '3'     ;  //,  id_of_torch    =  2;
+let KEY_repeater = '4'     ;  //,  id_of_repeater =  3;
+let KEY_lever    = '5'     ;  //,  id_of_lever    =  4;
+
+// ай, пофиг, костылим лишь бы побыстрее закончить (((  [эхх, вот бы просто создать массив на sizeof(char) элементов, но увы это не C++ и тут всё время надо мучаться и писать неэффективно]
+// здесь ПОРЯДОК НЕ МЕНЯЕТСЯ
+// лол, по идеи бы это назвать: component_to_KEY - ну да ладно (или всё таки зафиксить???) -> (конечно, сразу фиксим: в сто раз приятнее чем requestAnimationFrame мучаться) (для исторической справки этот массив изначально назывался: KEY_to_component)
+let KEY_of_component = [KEY_block, KEY_air,        KEY_redstone,            KEY_torch,            KEY_repeater,            KEY_lever];
+let ICN_of_component = [       -1,       0, redstone_icons.dust, redstone_icons.torch, redstone_icons.repeater, redstone_icons.lever];
+
+
+function get_inventory_y_level() {
+    // параметры (уфф, повторение из redraw_inventory) (уфф, пусть хотя бы это всё в одном месте в файле будет)
+    let a = redstone_icons.dust.width;
+    let Y1 = Y_GRIND_down + 10, Y2 = Y1 + a;
+    return [Y1, Y2];
+}
+
+// Если наведены прям на иконку то возвращается номер: i+2 (где i - номер иконки, с нуля)
+// Если наведены только на зону инвентаря, то возвращается: 1
+function is_in_inventory_block(x, y) {
+    // параметры (уфф, повторение из redraw_inventory)
+    let a = redstone_icons.dust.width;
+    let b = 3;        // толщина рамки вокруг выбранного предмета
+    let offset = 10;  // растояние между иконками
+    let X1 = GRINDx1;
+    let [Y1, Y2] = get_inventory_y_level();
+
+    // "-1" - потому-что не отображаем в инвенторе "воздух"
+    let cnt = KEY_of_component.length - 1;
+
+    let X2 = X1 + cnt*a + (cnt-1)*offset;
+    if( x < (X1-b) || (X2+b) < x || y < (Y1-b) || (Y2+b) < y ) return 0;
+    if( x < X1 || X2 < x || y < Y1 || Y2 < y ) return 1;  // здесь точка на "рамке" "выделенного премета"
+
+    let i = Math.trunc( (x - X1) / (a+offset) );
+    if( (x - X1) % (a+offset) <= a ) return i+2;
+
+    return 1;
+}
+
+// i - нумеруется с нуля
+function get_inventory_icon_coords(i) {
+    // параметры (уфф, повторение из redraw_inventory)
+    let a = redstone_icons.dust.width;
+    let offset = 10;  // растояние между иконками
+    let X1 = GRINDx1, Y1 = get_inventory_y_level()[0];
+    return [X1 + i*(a+offset), Y1];
+}
+
+function draw_frame(draw_ctx, x1, y1, a, dh) {
+    // dh - толщина рамки
+    draw_ctx.  fillStyle = "orange";
+    draw_ctx.strokeStyle = "black";
+    draw_ctx.lineWidth   = 1;
+    draw_ctx.  fillRect(x1 - dh, y1 - dh, a + 2*dh, a + 2*dh);
+    draw_ctx.strokeRect(x1 - dh, y1 - dh, a + 2*dh, a + 2*dh);
+}
+
+
+// добавить флаг - перерисовывать ли только блок - ай ладно, без разницы на данной итерации
+function redraw_inventory(which) {
+    // * which        - какая иконка рисуется с рамкой (выполняетя при dragged_icon != which), нумерация как у curr_showed_obj
+    // * dragged_icon - какую иконку не отрисовывать, также нумерация как у curr_showed_obj
+
+    dragged_icon = -2;
+    if( is_phase_after_animation ) dragged_icon = which_obj_dragged;
+
+    ctx.clearRect(0, Y_GRIND_down, my_canvas.width, my_canvas.height); // - Y_GRIND_down);
+    // ctx.clearRect(0, 0, my_canvas.width, my_canvas.height); 
+
+    // параметры
+    let a = redstone_icons.dust.width;
+    let b = 3;        // толщина рамки вокруг выбранного предмета
+    let offset = 10;  // растояние между иконками
+    let X1 = GRINDx1, Y1 = get_inventory_y_level()[0];
+
+
+    ctx.lineWidth   = 1;
+    ctx.strokeStyle = "black";
+
+    // рисование рамки вокруг выбранного предмета
+    if( dragged_icon != which ) {
+        let what_key = KEY_of_component[which+1];
+        if( '1' <= what_key && what_key <= '5' ) {  // уфф, какой хардкодинг
+            let pos = what_key - '1';
+            console.log('>>', what_key, pos);
+            draw_frame(ctx, X1 + pos * (a + offset), Y1, a, b);
+        }
+    }
+
+
+    let skipped_pos = -1;
+
+    // рисуем редстоун компоненты 
+    for(let i = 2; i < KEY_of_component.length; i++) {
+        let pos = KEY_of_component[i] - '1';  // захардкожено, что клавишами могут быть только цифры
+        if( dragged_icon == i-1 ) { skipped_pos = pos; continue; }
+
+        let x   = X1 + pos * (a + offset);
+        ctx. fillStyle = "white";
+        ctx. fillRect(x, Y1, a, a);
+        ctx.drawImage(ICN_of_component[i], x, Y1);
+    }
+
+    // рисуем блок
+    for(let iter = 0; iter < 1; iter++) {  // только одна итерация (чтобы проще выйти из тела "цикла")
+        let pos = KEY_block - '1';
+        if( dragged_icon == -1 ) { skipped_pos = pos; continue; }
+
+        let xb = X1 + pos * (a + offset),    A = GRINDa;
+        draw_block(ctx, mouse_x - A/2, mouse_y - A/2, A, xb, Y1, a);
+    }
+    
+    // рисуем рамки вокруг всех иконок
+    for(let i = 0; i < 5; i++) {
+        if( i == skipped_pos ) continue;
+
+        let x = X1 + (a + offset)*i
+        ctx.strokeStyle = "black";
+        ctx.lineWidth   = 1;
+        ctx.strokeRect(x, Y1, a, a);  // рамка
+        // Текст метки
+        ctx.font         = 'bold 10px Arial';
+        ctx.textAlign    = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle    = "black";
+        ctx.fillText(i+1, x + a/2, Y1 + a + 10);
+    }
+
+    ctx.beginPath();  // <- Ооо, кажется это имба (upd: хотя лучше бы его вначале поставить, но не хочу проверять)
+}
+
+
+
+function change_showed_obj_to(which) {
+    curr_showed_obj = which;
+
+    possible_rotation = [0, 1, 2, 3];
+    curr_rotation     =  0;
+    curr_cell_pos     = [-1, -1];
+
+    // для факела или рычага
+    let is_manualed   = ( which == 2 || which == 4 );
+    auto_rotation     = is_manualed;
+    possible_rotation = is_manualed ? [4] : possible_rotation;
+
+    // лол, чтобы с зажатым ЛКМ можно было и блоки менять
+    is_LBM_block_confiscate = 0;
+
+    redraw_inventory(which);
+    redraw_under_cursor_obj(which);
+}
+
+document.addEventListener('keydown', (event) => {
+    let c = event.key; 
+
+    if( c === 'r' ) {  // вращение
+        auto_rotation = 0;
+        curr_rotation = (curr_rotation+1) % possible_rotation.length;
+        redraw_under_cursor_obj();
+        return;
+    }
+    
+    let which = curr_showed_obj;
+
+    // хотя indexOf - довольно прикольно, однако (в этом случае) жалко что нумерация начинается с нуля, а не с единицы
+    let mb_new_indx  = KEY_of_component.indexOf(c);
+    if( mb_new_indx != -1 ) which = mb_new_indx-1;
+
+    console.log('curr object:', ["KEY_block", "KEY_air", "KEY_redstone", "KEY_torch", "KEY_repeater", "KEY_lever"][which+1]);
+
+    // поменяли предмет (или рассматривать что нажали на кнопку предмета: mb_new_indx != -1 ???)
+    if( which != curr_showed_obj ) {
+        change_showed_obj_to(which);
+    }
+
+    // по идеи это можно удалить, но ладно пока
+    curr_showed_obj = which;
+    redraw_under_cursor_obj(which);
+});
+
+function replace_dust(i, j) {
+
+}
+
+function replace_block(i, j) {
+    let pos = i*GRINDx_quantity + j;
+    
+    let sign = (is_block_elevated[pos] == 0) ? +1 : -1;
+    is_block_elevated[pos] = !is_block_elevated[pos];
+
+    // удаляем блок -> удаляем прикрепленные факелы/рычаги
+    if( sign == -1 ) {
+        for(let [di, dj, to_del] of [ [0, +1, 2], [-1, 0, 3], [0, -1, 0], [+1, 0, 1] ]) {
+            if( !is_correct_indx(i+di, j+dj) ) continue;
+            let {type, rotation} = get(i+di, j+dj);
+            if( (type == 2 || type == 4) && rotation == to_del ) place_redstone(i+di, j+dj, 0);
+        }
+    }
+}
+
+
+
+
+
+// ================================================================================================
+// Перетаскивание иконок инвентаря
+// ================================================================================================
+
+// кружок (как в Arknights Endfield при зажатии на постройке)
+function draw_load_circle(draw_ctx, xc, yc, r, angle) {
+    let r2 = r;      // внешний    радиус
+    let r1 = 0.8*r;  // внутренний радиус
+
+    // шкала заполнения
+    // > Оказывается fill с приколом: по умолчанию он заполняет по правилу: Nonzero-rule (см: https://en.wikipedia.org/wiki/Nonzero-rule)    
+    draw_ctx.beginPath();
+    draw_ctx.arc   (xc, yc,  r1, -Math.PI/2 + angle, -Math.PI/2, 1);
+    draw_ctx.lineTo(xc, yc - r2);
+    draw_ctx.arc   (xc, yc,  r2, -Math.PI/2, -Math.PI/2 + angle);
+    draw_ctx.closePath();
+    
+    draw_ctx.fillStyle = 'purple';
+    draw_ctx.fill();
+
+
+    // "рельсы"
+    draw_ctx.lineWidth   = 1;
+    draw_ctx.strokeStyle = 'black';
+    draw_ctx.beginPath();
+    draw_ctx.arc(xc, yc, r2, 0, 2*Math.PI);
+    draw_ctx.stroke();
+    draw_ctx.beginPath();
+    draw_ctx.arc(xc, yc, r1, 0, 2*Math.PI);
+    draw_ctx.stroke();
+}
+
+
+// для кликабельности инвенторя
+// номер иконки на которой нажат ЛКМ, нумерация: i+2 (где i - номер иконки в нумериции с 0) (чтобы было согласованно с is_in_inventory_block)
+let first_pressed_inventory_icon = 0;  // по идеи только для детектирования "клика" на иконку
+let       pressed_inventory_icon = 0;  // ==  если >= 2 - то значит ЛКМ в "состоянии" взаимодействия с иконками инвентаря
+// let pressed_on_icon   = 1;          // ==  animation_work (можно было записать в pressed_inventory_icon) -> так и сделаем!
+
+let is_phase_after_animation   = 0;  // перешли в режим перетаскивания иконки
+
+let which_obj_dragged  = -2;  // <- можно было бы по идеи использовать одну переменную на which_obj_dragged и pressed_on_icon
+let dragged_icon_shift = [0, 0];
+
+
+let start_time_animation_load_circle;  // техническая
+let is_next_animation_planned = 0;     // техническая (чтобы не создавать новые requestAnimationFrame, если уже есть один)
+
+let last_in_animation_drawed_mouse;
+
+
+// первый (типо первый раз делаю) requestAnimationFrame культиватор / комбайн
+function animation_load_circle(curr_timestamp) {  // curr_timestamp - передает requestAnimationFrame
+    let T1 =      500;
+    let T2 =     3000;
+    let T3 = T2 + 200;
+    
+    console.log("animate!");
+
+    is_next_animation_planned = (pressed_inventory_icon >= 2);
+    if( !is_next_animation_planned ) return;
+    
+    let dt = curr_timestamp - start_time_animation_load_circle;
+
+    // сначала простой (не рисуем ничего) (эхх, это можно было через waiter-а впихнуть)
+    if( dt < T1 ) { requestAnimationFrame(animation_load_circle); return; }
+
+    // let canvas_not_clear = 1;   // ??? мб чёт такое впихнуть (Аа, или прям тут рисовать перетаскиваемую иконку, ой, чето беее, там и в 'mousemove' какая-то такая логика есть)
+    // if( canvas_not_clear ) { }  // кароче у нас на above_ctx только одна функция рисует: либо эта, либо redraw_under_cursor_obj 
+    above_ctx.clearRect(0, 0, WW, HH);
+
+    let this_is_first_moment = 0;
+    if( is_phase_after_animation == 0 && dt >= T2 ) {  // первый момент как загрузка выполнилась
+        is_phase_after_animation =  1;
+        this_is_first_moment     =  1;
+
+        let [x1, y1] = get_inventory_icon_coords(pressed_inventory_icon-2);
+        dragged_icon_shift = [mouse_x - x1, mouse_y - y1];
+        last_in_animation_drawed_mouse = [-1, -1];
+
+        which_obj_dragged = KEY_of_component.indexOf( String(pressed_inventory_icon - 1) ) - 1;
+    }
+    
+    if( is_phase_after_animation ) {
+        // Координаты отрисовки иконки
+        let icon_x1 = mouse_x - dragged_icon_shift[0], icon_y1 = mouse_y - dragged_icon_shift[1];
+
+        // Перерисовываем только если сдвинули мышку (по идеи бы также с курсором делать, но да ладно, там муторно, что круг ещё отображается до T3, там ещё и рамку во время перетаскивания можем менять)
+        // перерисовка инвентаря. Нам нужно делать redraw_inventory только ради упоротого блока. Т.е. если мы вытащим блок из инвентаря, то на не нужно его перерисовывать
+        if( this_is_first_moment || (which_obj_dragged != -1 && (last_in_animation_drawed_mouse[0] != icon_x1 || last_in_animation_drawed_mouse[1] != icon_y1) ) ) {
+            console.log('redraw inventory!');
+            redraw_inventory(curr_showed_obj, which_obj_dragged);
+            last_in_animation_drawed_mouse = [icon_x1, icon_y1];
+        }
+        
+
+        // параметры (уфф, повторение из redraw_inventory) (!!!! ЗАХАРДКОЖЕННО)
+        let icon_a  = redstone_icons.dust.width;
+        let icon_dh = 3;  // толщина рамки вокруг выбранного предмета
+        
+        
+        // затемняем накрытую иконку инвентаря
+        let hovered_icon = which_icon_covered_by_drag_hitbox(icon_x1, icon_y1, icon_a);
+        if( hovered_icon >= 2 ) {
+            let [inventory_x1, inventory_y1] = get_inventory_icon_coords(hovered_icon-2);
+            above_ctx.fillStyle = 'rgba(100, 100, 100, 0.4)';
+            above_ctx.fillRect(inventory_x1, inventory_y1, icon_a, icon_a);
+        }
+        
+        
+        // Перерисовываем иконку
+        let is_framed = ( which_obj_dragged == curr_showed_obj );  // перетаскиваем объект с рамкой
+    
+        // тень под иконкой
+        let icon_shadow_dh = 3 + (is_framed ? icon_dh : 0);
+        above_ctx.fillStyle = 'rgba(100, 100, 100, 0.4)';
+        above_ctx.fillRect(icon_x1 - icon_shadow_dh, icon_y1 - icon_shadow_dh, icon_a + 2*icon_shadow_dh, icon_a + 2*icon_shadow_dh);
+
+        if( is_framed ) {  // перетаскиваем объект с рамкой    
+            draw_frame(above_ctx, icon_x1, icon_y1, icon_a, icon_dh);
+        }
+
+        // above_ctx.
+        // ОПЯТЬ КОПИРКА в рисовании (прям в точности redraw_inventory)
+        
+        // рисуем редстоун компонент 
+        if( which_obj_dragged > 0 ) {
+            above_ctx.fillStyle = "white";
+            above_ctx.fillRect(icon_x1, icon_y1, icon_a, icon_a);
+            above_ctx.drawImage(ICN_of_component[which_obj_dragged+1], icon_x1, icon_y1);
+        }
+
+        // рисуем блок
+        if( which_obj_dragged == -1 ) {
+            draw_block(above_ctx, icon_x1, icon_y1, icon_a, icon_x1, icon_y1, icon_a);
+        }
+        
+        // рисуем границу вокруг иконки
+        above_ctx.strokeStyle = "black";
+        above_ctx.lineWidth   = 1;
+        above_ctx.strokeRect(icon_x1, icon_y1, icon_a, icon_a);
+
+        // "hitbox" иконки (to debug)
+        above_ctx.strokeStyle = "red";
+        let use_a = icon_drag_hitbox_size != 0 ? icon_drag_hitbox_size : 0.5;
+        above_ctx.strokeRect(icon_x1 + (icon_a - use_a)/2, icon_y1 + (icon_a - use_a)/2, use_a, use_a);
+    }
+
+
+    // рисуем прогресс-бар. Чтобы рисовать один кадр с полной шкалой (хотя можно было тоже сделать для этого T3 - до скольки ещё показывается заполненный progress-bar) -> ну ок, на самом деле так и сделаем!
+    if( dt <= T3 ) {  // рисуем прогрессбар
+        let angle = ( Math.min(dt, T2) - T1 ) / (T2 - T1) * 2*Math.PI; 
+        draw_load_circle(above_ctx, mouse_x, mouse_y, 30, angle);
+    }
+        
+    requestAnimationFrame(animation_load_circle);
+}
+
+
+// лол, какая имба с отдельным началом анимации, взято из: https://developer.mozilla.org/en-US/docs/Web/API/Window/requestAnimationFrame#timestamp
+function start_animation_load_circle(curr_timestamp) {
+    start_time_animation_load_circle = curr_timestamp;
+    is_phase_after_animation = 0;
+    
+    // а это уже имба из waiter-а + крутой нейминг "is_next_animation_planned" - на который было убито 2 часа интенсивных размышлений :((( [как-то очень неприятно это всё реализованно в js]
+    if( !is_next_animation_planned ) animation_load_circle(curr_timestamp);
+}
+
+
+function finish_icon_drag() {
+    // [vvv] по идеи не нужно, так как мы всё равно при старте анимации обнуляем её
+    is_phase_after_animation = 0; // [<<] АХАХАХАХАХ, всё таки это нужно, мы же через это регулируем кто рисует на above_ctx: культиватор_requestAnimationFrame или redraw_under_cursor_obj
+    redraw_under_cursor_obj();
+
+    // по идеи и перестройка инвентаря
+
+    // перерисовка инвентаря
+    redraw_inventory(curr_showed_obj);
+}
+
+
+
+let icon_drag_hitbox_size = 20;  // квадрат с таким размером в середине перетаскиваемой иконки
+// Этот "hitbox" - должен быть меньше иконки!!! (Если он будет больше иконки то кажется это будет нелогичное поведение) -> поэтому не хочу в пустую это реализовывать (и раздувать и без того не малое количество иконок!!!)
+
+// возвращает: i+2 (не учитывает иконку which_obj_dragged)
+function which_icon_covered_by_drag_hitbox(icon_x1, icon_y1, icon_a) { 
+    // находим перекрытие (если есть)
+    let hit_x1 = icon_x1 + (icon_a - icon_drag_hitbox_size)/2, hit_x2 = hit_x1 + icon_drag_hitbox_size;
+    let hit_y1 = icon_y1 + (icon_a - icon_drag_hitbox_size)/2, hit_y2 = hit_y1 + icon_drag_hitbox_size;
+    let [Y1, Y2] = get_inventory_y_level();
+    if( hit_y2 < Y1 || Y2 < hit_y1 ) return 0;
+
+    // ожидается что hitbox меньше иконки => если есть пересечение с иконкой, то хотя бы одна из крайних точек попадёт в иконку
+    let icn1 = is_in_inventory_block(hit_x1, Y1);
+    let icn2 = is_in_inventory_block(hit_x2, Y1);
+    if( icn1 == pressed_inventory_icon ) icn1 = 0;
+    if( icn2 == pressed_inventory_icon ) icn2 = 0;
+
+    // если одна или обе граничных точки находятся вне иконки
+    if( icn1 < 2 || icn2 < 2 ) return Math.max(icn1, icn2);
+
+    // hitbox полностью внутри иконки (по идеи можно было в прошлый if всунуть, но ладно так как-то "поприятнее" мб)
+    if( icn1 == icn2 ) return icn1;
+
+    // hitbox накрывает две иконки (смотрим какая накрыта сильнее)
+    let  x1 = get_inventory_icon_coords(icn1-2)[0];
+    let dx1 = x1 + icon_a - hit_x1;
+    let  x2 = get_inventory_icon_coords(icn2-2)[0];
+    let dx2 = hit_x2 - x2;
+
+    if( dx1 > dx2 ) return icn1;
+    if( dx1 < dx2 ) return icn2;
+    return 0;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// УБОЖЕСТВО js (или мб моего его познания)
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+// довольно забавный костыль (уж лучше чем сейчас мучаться с этими Promise, бррр...)
+let images_to_load      = 1;
+let images_already_load = 0;
+
+function tryInit() {
+    if( ++images_already_load == images_to_load ) init();
+}
+background_img.onload = tryInit;
+
+
+function init() {
+    draw_grind(GRINDx1, GRINDy1, GRINDa, GRINDx_quantity, GRINDy_quantity);
+    redraw_inventory(curr_showed_obj);
+}
+
+
+
+</script>
