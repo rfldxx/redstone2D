@@ -451,21 +451,43 @@ function predraw_redstone_icons(clr) {
     // повторитель
     pictures.repeater = new OffscreenCanvas(a, a);
     draw_repeater(pictures.repeater.getContext('2d'), a, 0.5, 0.5, clr, 0);
+    // с разными "задержками" сигнала
+    pictures.repeater_variants = [new OffscreenCanvas(a, a), new OffscreenCanvas(a, a), new OffscreenCanvas(a, a), new OffscreenCanvas(a, a)];
+    for(let i = 0; i < 4; i++) {
+        draw_repeater(pictures.repeater_variants[i].getContext('2d'), a, 0.5, 0.5, clr, i/3);
+    }
 
     // рычаг
     pictures.lever         = new OffscreenCanvas(a+1, a+1);
-    draw_lever   (pictures.lever         .getContext('2d'), a, 0.5, 0.5, clr, -1);
+    draw_lever   (pictures.lever.getContext('2d'), a, 0.5, 0.5, clr, -1);
+    // выключен / по центру?? / включен (потому что включенный рычаг - это curr_showed_obj_extra_info == 2)
+    pictures.lever_variants = [new OffscreenCanvas(a, a), new OffscreenCanvas(a, a), new OffscreenCanvas(a, a)];
+    for(let i = 0; i < 3; i++) {
+        // вообще кринжово с выбором цвета, но ладно, он поидеи не должно аукнаться (до тех пор пока не придется создавать и использовать кастомную палитру для элементов прямо во время редактирования редстоун-схемы)
+        let use_clr = (i == 2) ? COLOR.RED_ON : clr;
+        draw_lever(pictures.lever_variants[i].getContext('2d'), a, 0.5, 0.5, use_clr, -1 + i);
+    }
+    
+    // рычаг прикрепленный к блоку
     pictures.lever_to_block = new OffscreenCanvas(a+1, a+1);
     // так кривенько (чтобы по умолчанию рычаг прикреплялся к правой стенке) (потому что исторически факел был написан также)
     ctx_rotate   (pictures.lever_to_block.getContext('2d'), 1,  (a+1)/2, (a+1)/2);
     draw_lever2  (pictures.lever_to_block.getContext('2d'), a, 0.5, 0.5, clr, -1);
     ctx_rotate   (pictures.lever_to_block.getContext('2d'), 0);
+    // (КАКОЙ УЖАС, но да ладно не жалко строчки кода) выключен / по центру?? / включен (потому что включенный рычаг - это curr_showed_obj_extra_info == 2)
+    pictures.lever_to_block_variants = [new OffscreenCanvas(a, a), new OffscreenCanvas(a, a), new OffscreenCanvas(a, a)];
+    for(let i = 0; i < 3; i++) {
+        let use_clr = (i == 2) ? COLOR.RED_ON : clr;
+        ctx_rotate   (pictures.lever_to_block_variants[i].getContext('2d'), 1,  (a+1)/2, (a+1)/2);
+        draw_lever2  (pictures.lever_to_block_variants[i].getContext('2d'), a, 0.5, 0.5, use_clr, -1 + i);
+        ctx_rotate   (pictures.lever_to_block_variants[i].getContext('2d'), 0);
+    }
+    
 
     return pictures;
 }
 
 let redstone_icons = predraw_redstone_icons(COLOR.RED_OFF);
-
 
 
 
@@ -630,7 +652,7 @@ function draw_tile(i, j) {
     }
 
     if( type == 4 ) {  // рычаг
-        // пока костыльно:  extra_info из [0, 2] - для рычага
+        // пока костыльно:  extra_info из [0, 2] - для рычага (емаё, зачем я сделал включенное состояние как 2?!?!?!)
         let clrr = (extra_info==2 ) ? COLOR.RED_ON : COLOR.RED_OFF;
         if( rotation == 4 ) draw_lever (ctx, GRINDa  , x1, y1, clrr, extra_info -1);  // по центру
         else                draw_lever2(ctx, GRINDa  , x1, y1, clrr, extra_info -1);  // к  блоку
@@ -1006,6 +1028,9 @@ let possible_rotation =  [0, 1, 2, 3];
 let     curr_rotation =   0 ;
 let     curr_cell_pos = [-1, -1];
 
+// на состояние (актуально только для копирование через колесико мышки)
+let curr_showed_obj_extra_info = 0;
+
 
 let mouse_x = WW/2, mouse_y = HH/2;
 let mouse_in_inventory = 0;
@@ -1051,6 +1076,7 @@ function calc_possible_rotations(i, j) {
 
 // СДЕЛАТЬ БЫ ТУТ:  как в RBM_click_on, чтобы:
 //      if( same_cell ) return; 
+// хз, может это и уже работает, но надо делать чтобы иконка под курсором рисовалась размером с клетку поля (вроде так пока не сделано)
 function redraw_under_cursor_obj(which = curr_showed_obj) {
     above_ctx.clearRect(0, 0, WW, HH);
     if( mouse_x < 0 || mouse_x > WW || mouse_y < 0 || mouse_y > HH ) return;
@@ -1098,12 +1124,12 @@ function redraw_under_cursor_obj(which = curr_showed_obj) {
         let icon_to_draw;
 
         if( which == 3 ) {  // повторитель
-            icon_to_draw = redstone_icons.repeater;
+            icon_to_draw = redstone_icons.repeater_variants[curr_showed_obj_extra_info];
         }
 
         if( which == 4 ) {  // рычаг
             // располагаем рычаг по центру / прикрепляем к блоку
-            icon_to_draw = (curr_rotation == 0) ? redstone_icons.lever : redstone_icons.lever_to_block;
+            icon_to_draw = (curr_rotation == 0) ? redstone_icons.lever_variants[curr_showed_obj_extra_info] : redstone_icons.lever_to_block_variants[curr_showed_obj_extra_info];
         }
 
         if( which == 2 ) {  // факел
@@ -1192,7 +1218,7 @@ function LBM_click_on(x, y) {
 
     // конечно для пыли и воздуха мы тут тоже записываем поворот (чего не должно быть) - ну да ладно, какая разница пока это нигде не используется
     if( 0 <= curr_showed_obj && curr_showed_obj <= 4 ) {
-        place_redstone(i, j, curr_showed_obj, possible_rotation[curr_rotation] );
+        place_redstone(i, j, curr_showed_obj, possible_rotation[curr_rotation], curr_showed_obj_extra_info);
     }
 
     // по сути это нужно только если у нас в руках блок - но ладно уж, пускай всегда вызывается
@@ -1288,6 +1314,33 @@ function RBM_click_on(x, y) {
 }
 
 
+let mouse_whell_click = [-1, -1];
+function copy_to_hand_from(i, j) {
+    let {type, rotation, extra_info} = get(i, j);
+
+    if( type == 0 ) {
+        if( is_layered(i, j) ) {
+            change_showed_obj_to(-1);
+        }
+        return;
+    }
+
+    change_showed_obj_to(type);
+
+
+    // Сделать чтобы для повторителя и рычага также копировалось "состояние"
+    
+    // да захардкоженно что список поворотов для повторителя именно: [0, 1, 2, 3]
+    if( type == 3 ) curr_rotation = rotation;
+
+    // здержка для повторителя или состояние рычага (включен ли)
+    if( type == 3 || type == 4 ) curr_showed_obj_extra_info = extra_info;
+
+    // в случае если скопированное состояние отличается от "основного" для это элемента
+    if( curr_rotation != 0 || curr_showed_obj_extra_info != 0 ) {
+        redraw_under_cursor_obj();
+    }
+}
 
 
 document.addEventListener('mouseup', (event) => {
@@ -1318,11 +1371,26 @@ document.addEventListener('mouseup', (event) => {
         is_RBM_pressed = 0;
         RBM_delete_alarm();
     }
+
+    if( event.button == 1 ) {  // нажали на колесико мышки
+        let [j, i] = which_covered(mouse_x, mouse_y);
+        if( i != -1 && mouse_whell_click[0] == i && mouse_whell_click[1] == j ) {  // коректный клик колесиком мышки
+            copy_to_hand_from(i, j);
+        }
+        mouse_whell_click = [-1, -1];
+    }
 });
 
 document.addEventListener('mousedown', (event) => {
     // потому что мы можем в самом начале не двигать мышку и тогда не понятно какие mouse_x, mouse_y, но при этом можно кликнуть
     update_mouse_pos(event.offsetX, event.offsetY);
+
+
+    if( event.button == 1 ) {  // нажали на колесико мышки
+        let [j, i] = which_covered(mouse_x, mouse_y);
+        mouse_whell_click = [i, j];
+        event.preventDefault();
+    }
 
 
     if( event.button == 0 ) {  // ЛКМ
@@ -1446,7 +1514,7 @@ function redraw_inventory(which) {
     // * which        - какая иконка рисуется с рамкой (выполняетя при dragged_icon != which), нумерация как у curr_showed_obj
     // * dragged_icon - какую иконку не отрисовывать, также нумерация как у curr_showed_obj
 
-    dragged_icon = -2;
+    let dragged_icon = -2;
     if( is_phase_after_animation ) dragged_icon = which_obj_dragged;
 
     ctx.clearRect(0, Y_GRIND_down, my_canvas.width, my_canvas.height); // - Y_GRIND_down);
@@ -1491,8 +1559,22 @@ function redraw_inventory(which) {
         let pos = KEY_block - '1';
         if( dragged_icon == -1 ) { skipped_pos = pos; continue; }
 
-        let xb = X1 + pos * (a + offset),    A = GRINDa;
-        draw_block(ctx, mouse_x - A/2, mouse_y - A/2, A, xb, Y1, a);
+        // емаё, чувствую в этом месте в последующей разработке будет криво рисоваться (а не, просто from_a отличаются в этих случаях)
+        let from_x1, from_y1, from_a;
+        
+        // в случае если мы находимся в фазу перетаскивания иконки, то положенние смещено (И МЫ ПЕРЕТАСКИВАЕМ ИКОНКУ)
+        if( is_phase_after_animation ) {
+            from_a  = a;
+            from_x1 = mouse_x - dragged_icon_shift[0];
+            from_y1 = mouse_y - dragged_icon_shift[1];
+        } else {  // иначе перетаскиваем КОМПОНЕНТ (=> разные площади покрываются по сравнению с ИКОНКОЙ)
+            from_a  = GRINDa;
+            from_x1 = mouse_x - from_a/2;
+            from_y1 = mouse_y - from_a/2;
+        }
+        
+        let xb = X1 + pos * (a + offset);
+        draw_block(ctx, from_x1, from_y1, from_a, xb, Y1, a);
     }
     
     // рисуем рамки вокруг всех иконок
@@ -1523,10 +1605,13 @@ function change_showed_obj_to(which) {
     curr_rotation     =  0;
     curr_cell_pos     = [-1, -1];
 
-    // для факела или рычага
+    //  is_manualed - для факела или рычага
     let is_manualed   = ( which == 2 || which == 4 );
     auto_rotation     = is_manualed;
     possible_rotation = is_manualed ? [4] : possible_rotation;
+
+    curr_showed_obj_extra_info = 0;
+
 
     // лол, чтобы с зажатым ЛКМ можно было и блоки менять
     is_LBM_block_confiscate = 0;
@@ -1538,7 +1623,26 @@ function change_showed_obj_to(which) {
 document.addEventListener('keydown', (event) => {
     let c = event.key; 
 
+    // ЕСЛИ ПЕРЕТАСКИВАЕМ ИКОНКУ инвентаря - то В ЭТОМ случае нажатие на клавиши менют перетаскиваемую иконку
+    if( is_phase_after_animation ) {
+        // клавиша перетаскиваемой иконки 
+        let dragging_c = KEY_of_component[which_obj_dragged+1];
+        if( c == dragging_c ) return;  // нажата та же клавиша
+        let which_obj_pressed  = KEY_of_component.indexOf(c) - 1;
+        console.log('try to change dragged icon: ', get_obj_name(which_obj_pressed));
+        if( which_obj_pressed == -2 ) return;  // такого компонента нет
+
+        // меняем перетаскиваему иконку
+        pressed_inventory_icon   = (c[0]-'1') + 2;  // ЗАХАРДКОЖЕННО что клавиша компонента это ЦИФРА
+        which_obj_dragged        = which_obj_pressed;
+        is_drag_animation_lagged = 1;
+        
+        return;
+    }
+
+    // кстати надо не вращать если предмет не отображается!!!
     if( c === 'r' ) {  // вращение
+        if( possible_rotation.length == 1 ) return;  // только одно положение
         auto_rotation = 0;
         curr_rotation = (curr_rotation+1) % possible_rotation.length;
         redraw_under_cursor_obj();
@@ -1551,16 +1655,22 @@ document.addEventListener('keydown', (event) => {
     let mb_new_indx  = KEY_of_component.indexOf(c);
     if( mb_new_indx != -1 ) which = mb_new_indx-1;
 
-    console.log('curr object:', ["KEY_block", "KEY_air", "KEY_redstone", "KEY_torch", "KEY_repeater", "KEY_lever"][which+1]);
+    console.log('select object:', get_obj_name(which));
 
     // поменяли предмет (или рассматривать что нажали на кнопку предмета: mb_new_indx != -1 ???)
     if( which != curr_showed_obj ) {
         change_showed_obj_to(which);
+    } else {
+        // если мы нажали на тот же предмет и у него было какое-то "состояние" (из-за копирования колесиком мыши) - то сбрасываем состояние
+        if( mb_new_indx != -1 && curr_showed_obj_extra_info != 0 ) {
+            curr_showed_obj_extra_info = 0;
+            redraw_under_cursor_obj();
+        }
     }
 
     // по идеи это можно удалить, но ладно пока
-    curr_showed_obj = which;
-    redraw_under_cursor_obj(which);
+    // curr_showed_obj = which;
+    // redraw_under_cursor_obj(which);
 });
 
 function replace_dust(i, j) {
@@ -1630,19 +1740,23 @@ let is_phase_after_animation   = 0;  // перешли в режим перет�
 
 let which_obj_dragged  = -2;  // <- можно было бы по идеи использовать одну переменную на which_obj_dragged и pressed_on_icon
 let dragged_icon_shift = [0, 0];
-
+let hovered_icon_by_dragging = 0;
 
 let start_time_animation_load_circle;  // техническая
 let is_next_animation_planned = 0;     // техническая (чтобы не создавать новые requestAnimationFrame, если уже есть один)
+let last_in_animation_drawed_mouse;    // техническая нужно только для перерисовки инвентаря
 
-let last_in_animation_drawed_mouse;
 
+// Если пользователь работает на скоростях быстрее чем FPS экрана (типо нажимает клавиши до того как вызвался requestAnimationFrame) (не возможно ли такое поведение ыыыы)
+let is_drag_animation_lagged = 0;  // анимация ещё не отобразила реальное состояние
+// ПОКА ПОЯВЛЯЕТСЯ ТОЛЬКО:  при смене перетаскиваемой иконки (из-за нажатию на клавишу другого компонента)
+// ПОКА ВЛИЯНИЕ ТОЛЬКО НА:  перерисовка инвенторя, hovered_icon_by_dragging
 
 // первый (типо первый раз делаю) requestAnimationFrame культиватор / комбайн
 function animation_load_circle(curr_timestamp) {  // curr_timestamp - передает requestAnimationFrame
-    let T1 =      500;
-    let T2 =     3000;
-    let T3 = T2 + 200;
+    let T1 =       500;
+    let T2 = T1 + 1000;
+    let T3 = T2 +  200;
     
     console.log("animate!");
 
@@ -1658,10 +1772,15 @@ function animation_load_circle(curr_timestamp) {  // curr_timestamp - перед
     // if( canvas_not_clear ) { }  // кароче у нас на above_ctx только одна функция рисует: либо эта, либо redraw_under_cursor_obj 
     above_ctx.clearRect(0, 0, WW, HH);
 
-    let this_is_first_moment = 0;
+    let need_redraw_inventory = 0;
+
+    // ПОКА ПОЯВЛЯЕТСЯ ТОЛЬКО:  при смене перетаскиваемой иконки
+    need_redraw_inventory    = is_drag_animation_lagged;
+    is_drag_animation_lagged = 0;
+    
     if( is_phase_after_animation == 0 && dt >= T2 ) {  // первый момент как загрузка выполнилась
         is_phase_after_animation =  1;
-        this_is_first_moment     =  1;
+        need_redraw_inventory    =  1;
 
         let [x1, y1] = get_inventory_icon_coords(pressed_inventory_icon-2);
         dragged_icon_shift = [mouse_x - x1, mouse_y - y1];
@@ -1676,9 +1795,10 @@ function animation_load_circle(curr_timestamp) {  // curr_timestamp - перед
 
         // Перерисовываем только если сдвинули мышку (по идеи бы также с курсором делать, но да ладно, там муторно, что круг ещё отображается до T3, там ещё и рамку во время перетаскивания можем менять)
         // перерисовка инвентаря. Нам нужно делать redraw_inventory только ради упоротого блока. Т.е. если мы вытащим блок из инвентаря, то на не нужно его перерисовывать
-        if( this_is_first_moment || (which_obj_dragged != -1 && (last_in_animation_drawed_mouse[0] != icon_x1 || last_in_animation_drawed_mouse[1] != icon_y1) ) ) {
+        let prev_x = last_in_animation_drawed_mouse[0], prev_y = last_in_animation_drawed_mouse[1];
+        if( need_redraw_inventory || (which_obj_dragged != -1 && (prev_x == -1 || prev_x != icon_x1 || prev_y != icon_y1) ) ) {
             console.log('redraw inventory!');
-            redraw_inventory(curr_showed_obj, which_obj_dragged);
+            redraw_inventory(curr_showed_obj);
             last_in_animation_drawed_mouse = [icon_x1, icon_y1];
         }
         
@@ -1689,9 +1809,9 @@ function animation_load_circle(curr_timestamp) {  // curr_timestamp - перед
         
         
         // затемняем накрытую иконку инвентаря
-        let hovered_icon = which_icon_covered_by_drag_hitbox(icon_x1, icon_y1, icon_a);
-        if( hovered_icon >= 2 ) {
-            let [inventory_x1, inventory_y1] = get_inventory_icon_coords(hovered_icon-2);
+        hovered_icon_by_dragging = which_icon_covered_by_drag_hitbox(icon_x1, icon_y1, icon_a);
+        if( hovered_icon_by_dragging >= 2 ) {
+            let [inventory_x1, inventory_y1] = get_inventory_icon_coords(hovered_icon_by_dragging-2);
             above_ctx.fillStyle = 'rgba(100, 100, 100, 0.4)';
             above_ctx.fillRect(inventory_x1, inventory_y1, icon_a, icon_a);
         }
@@ -1756,12 +1876,44 @@ function start_animation_load_circle(curr_timestamp) {
 }
 
 
+function set_key(which_obj, new_key) {
+    KEY_of_component[which_obj+1] = new_key;
+    
+    // во я конечно накринжил с этими KEY_name... (они кстати наверное даже нигде в коде не используются)
+    if( which_obj == -1 ) KEY_block    = new_key;
+    if( which_obj ==  0 ) KEY_air      = new_key;
+    if( which_obj ==  1 ) KEY_redstone = new_key;
+    if( which_obj ==  2 ) KEY_torch    = new_key;
+    if( which_obj ==  3 ) KEY_repeater = new_key;
+    if( which_obj ==  4 ) KEY_lever    = new_key;
+}   
+
+function get_obj_name(which_obj) {
+    return ["KEY_block", "KEY_air", "KEY_redstone", "KEY_torch", "KEY_repeater", "KEY_lever"][which_obj+1];
+}
+
 function finish_icon_drag() {
     // [vvv] по идеи не нужно, так как мы всё равно при старте анимации обнуляем её
     is_phase_after_animation = 0; // [<<] АХАХАХАХАХ, всё таки это нужно, мы же через это регулируем кто рисует на above_ctx: культиватор_requestAnimationFrame или redraw_under_cursor_obj
     redraw_under_cursor_obj();
 
-    // по идеи и перестройка инвентаря
+    // Если пользователь работает на скоростях быстрее чем FPS экрана (типо нажимает клавиши до того как вызвался requestAnimationFrame) (не возможно ли такое поведение ыыыы)
+    if( is_drag_animation_lagged ) {
+        let icon_x1 = mouse_x - dragged_icon_shift[0], icon_y1 = mouse_y - dragged_icon_shift[1];
+        let icon_a  = redstone_icons.dust.width;  // параметры (уфф, повторение из redraw_inventory) (!!!! ЗАХАРДКОЖЕННО)
+        hovered_icon_by_dragging = which_icon_covered_by_drag_hitbox(icon_x1, icon_y1, icon_a);
+    }
+
+    // перестраиваем инвентарь (лол, так просто, че я оттягивал то это - просто прекраснная архитектура!!)
+    if( hovered_icon_by_dragging >= 2 ) {
+        let hovered_obj = KEY_of_component.indexOf( String(hovered_icon_by_dragging - 1) ) - 1;
+
+        console.log('swap objects: ', get_obj_name(which_obj_dragged), get_obj_name(hovered_obj));
+
+        set_key( which_obj_dragged, String(hovered_icon_by_dragging - 1) );
+        set_key( hovered_obj      , String(pressed_inventory_icon   - 1) );
+    }
+    hovered_icon_by_dragging = 0;
 
     // перерисовка инвентаря
     redraw_inventory(curr_showed_obj);
@@ -1771,6 +1923,7 @@ function finish_icon_drag() {
 
 let icon_drag_hitbox_size = 20;  // квадрат с таким размером в середине перетаскиваемой иконки
 // Этот "hitbox" - должен быть меньше иконки!!! (Если он будет больше иконки то кажется это будет нелогичное поведение) -> поэтому не хочу в пустую это реализовывать (и раздувать и без того не малое количество иконок!!!)
+
 
 // возвращает: i+2 (не учитывает иконку which_obj_dragged)
 function which_icon_covered_by_drag_hitbox(icon_x1, icon_y1, icon_a) { 
