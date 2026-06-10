@@ -22,7 +22,7 @@ const WW = layer1.width, HH = layer1.height;
 
 let GRINDda = 5;
 
-let GRINDx1 = 50.5, GRINDy1 = 50.5, GRINDa = 50, GRINDx_quantity = 12, GRINDy_quantity = 7;
+let GRINDx1 = 50.5, GRINDy1 = 50.5, GRINDa = 50;
 
 
 
@@ -501,7 +501,8 @@ background_img.src = 'background2.jpg'; //'background.png';
 
 // рисуем блок
 function draw_block(draw_ctx, from_x1, from_y1, from_a, to_x1, to_y1, to_a) {
-    let XX = 2*GRINDda + GRINDx_quantity * GRINDa, YY = 2*GRINDda + GRINDy_quantity * GRINDa;
+    let [x_quantity, y_quantity] = get_quantity(CURR_ID);
+    let XX = 2*GRINDda + x_quantity * GRINDa, YY = 2*GRINDda + y_quantity * GRINDa;
     let scale_x = background_img.width  / XX;
     let scale_y = background_img.height / YY;
 
@@ -552,89 +553,93 @@ function ctx_rotate_and_reper(draw_ctx, t, xc = 0, yc = 0) {
 
 
 
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// ПАРАМЕТРЫ МИКРОСХЕМЫ
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+// ВНИМАНИЕ: ИСПОЛЬЗУЕТСЯ  Uint8
+function new_array(N) { return new Uint8Array(N); }
+
+
+// !!! todo: Ай пока захардкожен размер (потом бы как vector перевыделять при переполнении)
+const all_quantities = new_array(1000);  // в 2*i - хранится x_quantity, в 2*i+1 - y_quantity
+// ПОКА СТРАННО ЧТО делать с INSCALE или как там его..
+// СЕЙЧАС x_quantity - это размер занимаемой микросхемой ПРИ ВСТАВКЕ (А НЕ КОЛИЧЕСТВО КЛЕТОК В НЕЙ)
+
+function get_quantity(microshem_id) {
+    return [ all_quantities[2*microshem_id], all_quantities[2*microshem_id+1] ];
+}
+
+// !!! надо бы сохранять dust_connection и microsheme_connection и не пересчитывать их на каждом кадре
+
+// БУДЕМ РАБОТАТЬ ЧЕРЕЗ ОБЁРТКИ (а то пока хз как лучше хранить данные)
+let   cnt_microshemes  = 0;
+const field_type       = [];
+const field_rotation   = [];
+const field_extra_info = [];
+// TYPE:  0 - пусто
+//        1 - пыль
+//        2 - факел
+//        3 - повторитель
+//        4 - рычаг
+//        5 - вложенная      микросхема (extra_info - координата pos угла этой микросхемы)
+//        6 - угол вложенной микросхемы (extra_info - индекс microsheme_id)
+
+// НО: при перетаскивании микросхемы - мы используем только:  which_obj == 5
+
+function is_microsheme_type(type) { return type == 5 || type == 6; }
+
+
+const is_block_elevated = [];
+
+
+// СОЗДАНИЕ новой микросхемы - // возвращает индекс:  microsheme_id
+// ! todo: похорошему переделать на связный список
+function create_new_microsheme(x_quantity, y_quantity) {
+    if( cnt_microshemes >= 500 ) throw new Error('ПОКА ПОДДЕРЖИВАЕТСЯ ТОЛЬКО 500 МИКРОСХЕМ за всё время жизни программы!');
+    all_quantities[2*cnt_microshemes  ] = x_quantity;
+    all_quantities[2*cnt_microshemes+1] = y_quantity;
+
+    // просто, что за дебильное наименование const
+    const N = x_quantity * y_quantity;
+    field_type       .push( new_array(N) ); 
+    field_rotation   .push( new_array(N) );
+    field_extra_info .push( new_array(N) );
+    is_block_elevated.push( new_array(N) );
+    cnt_microshemes++;
+
+    return cnt_microshemes-1;
+}
+
+function delete_microsheme(microsheme_id) {
+    // пока так и остаются лежать в массиве
+    // СМОТРИ функцию: delete_internal_microcheme_from_list
+    // из COMMIT: develop-0.30.3
+    // ЗА "ИДЕЯМИ" ПО РЕАЛИЗАЦИИ
+}
+
+
+
+let GRINDx_quantity = 12, GRINDy_quantity = 7;
+create_new_microsheme(GRINDx_quantity, GRINDy_quantity);
+let CURR_ID = 0;
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // ВЛОЖЕННАЯ МИКРОСХЕМА
-let one_exsist_microsheme_id = 0;
-let one_exsist_microsheme_i  = 1, one_exsist_microsheme_j = 1;
-let one_exsist_microsheme_x_quantity = 3;
-let one_exsist_microsheme_y_quantity = 2;
-let one_exsist_microsheme_scale      = 3;
+let one_exsist_microsheme_scale = 3;
 
-// положения вложенных микросхем для данной микросхемы
-let internal_microsheme_poses = [];  // без пропусков, чтобы в отрисовки быстро проитерироваться
-let internal_microsheme_indx_in_list = [];
+
 
 // при перетаскивании другой микросхемы - для нас ПАМЯТЬ БЕСПЛАТНА, ПОДУМАЕШЬ СОЗДАДИМ ЕЩЁ ОДИН МАССИВ
-// let internal_microsheme_hovered_poses = [];  (изначально планировалось создать битовй массив сразу на все индексы, хотя кажется быстрее просто каждый раз перебирать все индексы)
-let hovered_microsheme_list_indxes = [];
+// [ старое: let internal_microsheme_hovered_poses = [];  (изначально планировалось создать битовй массив сразу на все индексы, хотя кажется быстрее просто каждый раз перебирать все индексы) ]
+// Храняться позиции левых верхних уголков микросхем
+let hovered_microshemes_poses = [];
 
-// Балин, всё таки придется делать связный список, всё таки наверное придется узнать как делать классы в js.
-let internal_microsheme_list  = [];  // с пропусками, чтобы indx вставленого элемента не менялся. Значение указывает на индекс в internal_microsheme_poses
-// ЛОЛ, а нужно ли это? У нас же всё равно буквально не больше 100 микросхем (микросхемы глубинны 2 не учитываются) будет располагаться на одной схеме.
-// let list_next = [], list_prev = []; - пока скип на это
-let internal_microsheme_list_free_pos = 0;
-
-// возвращает индекс в internal_microsheme_list
-function insert_internal_microsheme(pos, global_id) {
-    // нахождение free_pos
-    if( internal_microsheme_list.length == internal_microsheme_poses.length ) {
-        internal_microsheme_list.push(-1);
-        internal_microsheme_list_free_pos = internal_microsheme_list.length - 1;
-    }
-    while( internal_microsheme_list[internal_microsheme_list_free_pos] != -1 ) internal_microsheme_list_free_pos++;
-
-    // вставка
-    internal_microsheme_list [internal_microsheme_list_free_pos] = internal_microsheme_poses.length;
-    internal_microsheme_poses       .push(pos);
-    internal_microsheme_indx_in_list.push(internal_microsheme_list_free_pos);
-    hovered_microsheme_list_indxes  .push(0);
-
-    return internal_microsheme_list_free_pos;
-}
-
-function delete_internal_microcheme_from_list(del_indx) {  // индекс в internal_microsheme_list
-    // или реально pop делать?? - реально, го, чё нет (к тому же минус переменная internal_microsheme_cnt)
-    
-    let poses_id = internal_microsheme_list[del_indx];
-    
-    let  last_id = internal_microsheme_poses.length-1;
-    let upd_indx = internal_microsheme_indx_in_list[last_id];
-
-    internal_microsheme_poses       [poses_id] = internal_microsheme_poses       [last_id];
-    internal_microsheme_indx_in_list[poses_id] = internal_microsheme_indx_in_list[last_id];
-    // по идеи смысла тут менять нет, так как ожидается что в этот моменет internal_microsheme_hovered_poses - полностью нулевой
-    // А ХОТЯЯЯЯ - что если мы вовремя перетаскивания одной микросхемы, что-то делаем со списком микросхем? (как будто-то пока у нас только один курсор это не возможно) - но ладно, на всякий
-    hovered_microsheme_list_indxes  [poses_id] = hovered_microsheme_list_indxes  [last_id];
-
-    internal_microsheme_poses       .pop();
-    internal_microsheme_indx_in_list.pop();
-    hovered_microsheme_list_indxes  .pop();
-
-    internal_microsheme_list[upd_indx] = poses_id;
-
-    // Хотя ладно, всё равно осталась проблема, что память может стагнироваться (правда при неимовернных количествах операциях):
-    //   for(int t = 0; t <= T; t++) insert_in(ID, pos, global_id);
-    //   for(int t = 0; t <  T; t++) delete_in(ID, t);
-    // В итоге после этого в списке internal_microsheme_list для платы ID будет T позиций, из которых только последняя актуальная.
-    // Если такой процесс повторить с другим K штуками ID, то в нашей системе будет заниматься память K*T, хотя при этом можно было бы обойтись только памятью размером T!
-
-    // НАДО всё таки сделать чтобы все клетки вложенной микросхемы ссылались на угол микросхемы, а угол микросхемы ссылался уже на internal_microsheme_poses и тогда никакого internal_microsheme_list не нужно будет, так как нам не нужно фиксированости indx-а после вставки.
-
-    internal_microsheme_list[del_indx] = -1;
-    if( internal_microsheme_list_free_pos == -1 || del_indx < internal_microsheme_list_free_pos ) {
-        internal_microsheme_list_free_pos = del_indx;
-    }
-
-    // КАК ПОМЕНЯЛСЯ ПОРЯДОК ИНДЕКСОВ
-    // НАВЕРНОЕ БУДЕТ МЕГА ВАЖНО КОГДА НАКОНЕЦ ОТКАЖЕМСЯ ОТ СВЯЗНОГО СПИСКА
-    // ?? return [last_id, poses_id];  // типо значение из last_id перешло в poses_id
-}
 
 
 let areal_boreder_clrs = ['#007539', '#911341', '#ff4d00'];
 
-let delvar_curr_areal_clr = 0;  // цвет надо "жадно" выбирать по цветам соседей
+let delvar_curr_areal_clr = 0;  // цвет надо "жадно" (либо через теорему о 4 красках, лол) выбирать по цветам соседей (при касании разных микрохем)
 
 // ареал вокруг микросхемы (рамка на границе)
 function draw_microsheme_areal(draw_ctx, x1, y1, x_quantity, y_quantity, in_scale) {  // + мб добавить аргумент connections
@@ -658,12 +663,16 @@ function draw_microsheme_areal(draw_ctx, x1, y1, x_quantity, y_quantity, in_scal
 
 }
 
-function draw_microsheme(draw_ctx, x1, y1, x_quantity, y_quantity, in_scale, indx = -1) {
+function draw_microsheme(draw_ctx, x1, y1, in_scale, microsheme_id = -1) {
+    let draw_dragging = ( microsheme_id == -1 );
+
+    let [x_quantity, y_quantity] = (!draw_dragging) ? get_quantity(microsheme_id) : [dragged_microsheme_x_quantity, dragged_microsheme_y_quantity];
     draw_only_grind(draw_ctx, x1, y1, in_scale*x_quantity, in_scale*y_quantity, GRINDa/in_scale, 0.5);
     draw_only_grind(draw_ctx, x1, y1, x_quantity, y_quantity, GRINDa, 1);
 
     // может сразу тут рамку рисовать?
     draw_microsheme_areal(draw_ctx, x1, y1, x_quantity, y_quantity, in_scale);
+
 
     // ДЕБАГ информация
     draw_ctx.font         = 'bold 10px Arial';
@@ -671,10 +680,12 @@ function draw_microsheme(draw_ctx, x1, y1, x_quantity, y_quantity, in_scale, ind
     draw_ctx.textBaseline = 'middle';
     draw_ctx.fillStyle    = "black";
     let x2 = x1 + x_quantity*GRINDa, y2 = y1 + y_quantity*GRINDa;
-    let logging_txt = 'indx: ';
-    if( indx == -1 ) {
-        indx = internal_microsheme_list[draged_microsheme_list_indx]
-        logging_txt = 'drag list indx ' + String(draged_microsheme_list_indx) + ' | indx: ';
+    let logging_txt = 'microsheme_id: ';
+    if( draw_dragging ) {
+        // пока так - это только для дебага - на "РЕЛИЗЕ" (лул) надо удалить
+        microsheme_id = field_extra_info[CURR_ID][draged_microsheme_pos];
+
+        logging_txt = 'drag from pos ' + String(draged_microsheme_pos) + ' | microsheme_id: ';
 
         draw_ctx.beginPath();
         draw_ctx.moveTo(0, 0);
@@ -683,8 +694,7 @@ function draw_microsheme(draw_ctx, x1, y1, x_quantity, y_quantity, in_scale, ind
         draw_ctx.stroke();
     }
 
-
-    logging_txt = logging_txt + String(indx);
+    logging_txt = logging_txt + String(microsheme_id);
     let txt_x2 = x2 + 0.8*GRINDda, txt_y2 = y2 + 0.8*GRINDda, txt_w = 1.6*GRINDda + draw_ctx.measureText(logging_txt).width, txt_h = 11;
     // console.log('txt len: ', txt_h);
     draw_ctx.fillStyle = 'white';
@@ -700,7 +710,8 @@ function magnetize_microsheme_to_grid(x, y, x_quantity, y_quantity) {
     if( 2*(x - x1) > GRINDa ) { j++; x1 += GRINDa; }
     if( 2*(y - y1) > GRINDa ) { i++; y1 += GRINDa; }
 
-    if( i < 0 || j < 0 || i+y_quantity > GRINDy_quantity || j+x_quantity > GRINDx_quantity ) return [-1, -1, x, y];
+    let [microsheme_x_quantity, microsheme_y_quantity] = get_quantity(CURR_ID);
+    if( i < 0 || j < 0 || i+y_quantity > microsheme_y_quantity || j+x_quantity > microsheme_x_quantity ) return [-1, -1, x, y];
     return [i, j, x1, y1];
 }
 
@@ -708,7 +719,7 @@ function magnetize_microsheme_to_grid(x, y, x_quantity, y_quantity) {
 let is_dragging_microsheme_overlap_redstone = 0;
 let prev_cell_when_drag_microsheme = [-1, -1];  // <- Пока заброщена эта переменная, для неё нужно добавлять новый layer
 // ПОЧЕМУ бы не передавать просто draged_microsheme_list_indx вместо параметров? (хотя если мы будем создавать новую микросхему с "клавиатуру", то не хотелось бы сраз давать её id - вдруг мы отменим её создание)
-function draw_microsheme_drag_cover(draw_ctx, x, y, x_quantity, y_quantity, in_scale) {
+function draw_microsheme_drag_cover(draw_ctx, x, y, x_quantity, y_quantity) {
     draw_ctx.beginPath();
     draw_ctx.moveTo(x, y);
     draw_ctx.lineTo(x + dragged_microsheme_shift_to_left_up_corner[0], y + dragged_microsheme_shift_to_left_up_corner[1]);
@@ -750,83 +761,78 @@ function draw_microsheme_drag_cover(draw_ctx, x, y, x_quantity, y_quantity, in_s
     let recalc = ( i != prev_cell_when_drag_microsheme[0] || j != prev_cell_when_drag_microsheme[1] );
     if( recalc ) {
         is_dragging_microsheme_overlap_redstone = 0;
-        hovered_microsheme_list_indxes = [];
+        hovered_microshemes_poses = [];
     }
     let last_hovered = -1;
     
 
+    let handle_microsheme_x_quantity = get_quantity(CURR_ID)[0];
     for(let di = 0; di < y_quantity; di++) {
-        let pos = (i+di)*GRINDx_quantity + j;
+        let pos = (i+di)*handle_microsheme_x_quantity + j;
         for(let dj = 0; dj < x_quantity; dj++, pos++) {
             let da = 0; // "каустики" на перекрытии блоков: is_block_elevated[pos] ? GRINDda : 0;
-            if( is_block_elevated[pos] || ( field_type[pos] && field_type[pos] != 5 ) ) {
+            let type = field_type[CURR_ID][pos];
+            if( is_block_elevated[CURR_ID][pos] || ( type && !is_microsheme_type(type) ) ) {
                 draw_ctx.fillRect(x1 + dj*GRINDa - da, y1 + di*GRINDa - da, GRINDa + 2*da, GRINDa + 2*da);
                 is_dragging_microsheme_overlap_redstone = 1;
                 continue;
             }
-            if( field_type[pos] != 5 || !recalc ) continue; 
+            if( !is_microsheme_type(type) || !recalc ) continue; 
 
 
-            let microsheme_indx = field_extra_info[pos];
-            if( microsheme_indx == draged_microsheme_list_indx ) continue;  // не учитываем перетаскиваемую микросхему
+            let microsheme_pos = get_microsheme_corner(CURR_ID, pos);
+            if( microsheme_pos == draged_microsheme_pos ) continue;  // не учитываем перетаскиваемую микросхему
 
             // типо оптимизация для одинаковых подряд (по оси x) элементов
-            if( last_hovered != -1 && microsheme_indx == hovered_microsheme_list_indxes[last_hovered] ) continue;
+            if( last_hovered != -1 && microsheme_pos == hovered_microshemes_poses[last_hovered] ) continue;
 
+            // перебор, была ли уже такая позиция микросхемы
             last_hovered = 0;
-            while( last_hovered < hovered_microsheme_list_indxes.length && microsheme_indx != hovered_microsheme_list_indxes[last_hovered] ) {
+            while( last_hovered < hovered_microshemes_poses.length && microsheme_pos != hovered_microshemes_poses[last_hovered] ) {
                 last_hovered++;
             }
             
-            if( last_hovered == hovered_microsheme_list_indxes.length ) {
-                hovered_microsheme_list_indxes.push(microsheme_indx);
+            if( last_hovered == hovered_microshemes_poses.length ) {
+                hovered_microshemes_poses.push(microsheme_pos);
             }
         }
     }
 
-    for(let indx of hovered_microsheme_list_indxes) {
-        let pos  = internal_microsheme_poses[ internal_microsheme_list[indx] ];
-        let [microsheme_x1, microsheme_y1] = get_block_coords( ...pos_to_ij(pos) );
-        draw_ctx.fillRect(microsheme_x1, microsheme_y1, one_exsist_microsheme_x_quantity*GRINDa, one_exsist_microsheme_y_quantity*GRINDa);
+    for(let pos of hovered_microshemes_poses) {
+        let microsheme_id = field_extra_info[CURR_ID][pos];
+        let [overlap_microsheme_x1, overlap_microsheme_y1] = get_block_coords( ...pos_to_ij(pos) );
+        let [overlap_microsheme_x_quantity, overlap_microsheme_y_quantity] = get_quantity(microsheme_id);
+        draw_ctx.fillRect(overlap_microsheme_x1, overlap_microsheme_y1, overlap_microsheme_x_quantity*GRINDa, overlap_microsheme_y_quantity*GRINDa);
     }
 
     prev_cell_when_drag_microsheme = [i, j];
 }
 
-// ЕСЛИ canceled = 1 - то значит перетаскивание отменяется
-function finish_microsheme_drag(x, y, canceled = 0) {
+
+function finish_microsheme_drag_at(x, y) {
+    let draged_microsheme_id = field_extra_info[CURR_ID][draged_microsheme_pos];
+
     // пхпх, подобие raii (копируем в локальные переменные, а затем reset-аям то что должно происходить при return-е)
-    let is_overlaping = is_dragging_microsheme_overlap_redstone || hovered_microsheme_list_indxes.length;
-    let overlap_list_indxes = hovered_microsheme_list_indxes;
+    let is_overlaping = is_dragging_microsheme_overlap_redstone || hovered_microshemes_poses.length;
+    let overlap_microsheme_poses = hovered_microshemes_poses;
     
-    // БЛИН, МБ ЭТО ТОЖЕ В reset_microsheme_drag_settings ПЕРЕНЕСТИ?
-    is_dragging_microsheme_overlap_redstone =   0;
-    hovered_microsheme_list_indxes          =  [];
-    prev_cell_when_drag_microsheme          = [-1, -1];
-
-    if( canceled ) {
-        reset_microsheme_drag_settings();
-        redraw();
-        return;
-    }
-
-    // draged_microsheme_list_indx
-    let prev_x_quantity = one_exsist_microsheme_x_quantity;
-    let prev_y_quantity = one_exsist_microsheme_y_quantity;
-    let [prev_i, prev_j] = pos_to_ij( draged_microsheme_poses );
-    let  prev_rotate = field_rotation[draged_microsheme_poses];
+    // draged_microsheme_pos
+    let [x_quantity, y_quantity] = [dragged_microsheme_x_quantity, dragged_microsheme_y_quantity]
+    let [prev_i, prev_j] = pos_to_ij( draged_microsheme_pos );
+    let  prev_rotate = field_rotation[CURR_ID][draged_microsheme_pos];
     
     // dragged_microsheme_rotation <- ПОКА МЕГА ПРОТОТИПНО
-    let [     cover_x_quantity,      cover_y_quantity] = (dragged_microsheme_rotation % 2) ? [prev_y_quantity, prev_x_quantity] : [prev_x_quantity, prev_y_quantity];
-    let [prev_cover_x_quantity, prev_cover_y_quantity] = (              prev_rotate   % 2) ? [prev_y_quantity, prev_x_quantity] : [prev_x_quantity, prev_y_quantity];
+    let [     cover_x_quantity,      cover_y_quantity] = (dragged_microsheme_rotation % 2) ? [y_quantity, x_quantity] : [x_quantity, y_quantity];
+    let [prev_cover_x_quantity, prev_cover_y_quantity] = (              prev_rotate   % 2) ? [y_quantity, x_quantity] : [x_quantity, y_quantity];
     
 
     // примагничивание к сетке
-    let [new_i, new_j] = canceled ? [prev_i, prev_j] : magnetize_microsheme_to_grid(x, y, cover_x_quantity, cover_y_quantity);
-    let  new_pos = new_i*GRINDx_quantity + new_j;
+    let [new_i, new_j] = magnetize_microsheme_to_grid(x, y, cover_x_quantity, cover_y_quantity);
+    let  handle_x_quantity = get_quantity(CURR_ID)[0];
+    let  new_pos = new_i*handle_x_quantity + new_j;
 
     
-    if( !canceled ) console.log('finish covered cell: ', new_i, new_j);
+    console.log('finish microsheme drag at cell: ', new_i, new_j);
 
     let no_changing_field = 0;
     if( new_i == -1 )                        no_changing_field = 1;
@@ -834,52 +840,50 @@ function finish_microsheme_drag(x, y, canceled = 0) {
     
     // Если позиция таже, то не надо переделывать field (А ЕСЛИ СМЕНИЛИ ПОВОРОТ НО ТЫКНУЛИ ТУДА ЖЕ?)
     // по хорошему нужна проверка: dragged_microsheme_rotation != prev_rotation (но пока просто чтоб запустилось ыыы)
-    if( draged_microsheme_poses == new_pos && (dragged_microsheme_rotation == prev_rotate) ) no_changing_field = 1;
+    if( draged_microsheme_pos == new_pos && (dragged_microsheme_rotation == prev_rotate) ) no_changing_field = 1;
     
-    if( canceled || no_changing_field ) {
+    if( no_changing_field ) {
+        console.log('not changing microsheme');
         reset_microsheme_drag_settings();
         redraw();  // а с redraw() костыльный raii не прошёл
         return;
     }
     
-    // новая позиция для перетаскиваемой микросхемы
-    // ( сделано пораньше чтобы delete_microcheme не повлиял - ХОТЯ УЖЕ ВСЁ ПРЕДУСМОТРЕННО ЧТО ОН НЕ ПОВЛИЯЕТ)
-    internal_microsheme_poses[internal_microsheme_list[draged_microsheme_list_indx]] = new_pos;
     
     console.log('move microsheme (', prev_i, ' ',  prev_j, ')  ->  (', new_i, ' ', new_j, ')');
 
-    if( overlap_list_indxes.length ) {  // удаляем перекрытие микросхемы
-        for(let list_indx of overlap_list_indxes) {
-            delete_microcheme(list_indx);
+    if( overlap_microsheme_poses.length ) {  // удаляем перекрытие микросхемы (лул, а к чему тут if ыыы)
+        for(let pos of overlap_microsheme_poses) {
+            // delete_microcheme(pos);
+            // КАК БУДТО ЛУЧШЕ БЫ: clear_microsheme()
         }
     }
 
     // стираем исходное положение микросхемы и ставим в новое место
-    massive_clear_field(prev_i, prev_j, prev_cover_x_quantity, prev_cover_y_quantity);
-    place_microsheme   ( new_i,  new_j,      cover_x_quantity,      cover_y_quantity, draged_microsheme_list_indx);
+    massive_clear_field(CURR_ID, prev_i, prev_j, prev_cover_x_quantity, prev_cover_y_quantity);
+    field_rotation[CURR_ID][draged_microsheme_pos] = 0;  // <- не обязательно - но чтобы поле при дебаге было красивым/чистым
+
+    place_microsheme   (CURR_ID,  new_i,  new_j, draged_microsheme_id, dragged_microsheme_rotation);
     
     // стираем "приподнятый уровень" под новым местом микросхемы
-    massive_array_set(is_block_elevated, 0, new_i, new_j, cover_x_quantity, cover_y_quantity);
+    massive_array_set(is_block_elevated[CURR_ID], 0, handle_x_quantity, new_i, new_j, cover_x_quantity, cover_y_quantity);
 
-
-    // АААА, ПЕРОЕ НА УДАЛЕНИЕ!!!!!!
-    // if( dragged_microsheme_rotation%2 ) [one_exsist_microsheme_x_quantity, one_exsist_microsheme_y_quantity] = [one_exsist_microsheme_y_quantity, one_exsist_microsheme_x_quantity];
-    // И ЗАЧЕМ я так решил хардкодить - в итоге как это сделал, сразу начал переделывать....
-    field_rotation[draged_microsheme_poses] = 0;
-    field_rotation[new_pos] = dragged_microsheme_rotation;
+    
 
     reset_microsheme_drag_settings();
     redraw();
 }
 
 
-let draged_microsheme_list_indx = -1;
-let draged_microsheme_poses     = -1;
+let draged_microsheme_pos = -1;
 
 function reset_microsheme_drag_settings() {
-    draged_microsheme_list_indx = -1;
-    draged_microsheme_poses     = -1;
+    draged_microsheme_pos       = -1;
     dragged_microsheme_rotation =  0;
+
+    is_dragging_microsheme_overlap_redstone =   0;
+    hovered_microshemes_poses               =  [];
+    prev_cell_when_drag_microsheme          = [-1, -1];
     
     // curr_showed_obj = curr_framed_obj;  // <- охх, как повезло что быстро про это вспомнил (оххх, хотя это багает в другом месте)
 }
@@ -888,6 +892,10 @@ function reset_microsheme_drag_settings() {
 // по идеи в самой клетке микросхемы написан rotation и мы его копируем при начале передвижении микросхемы
 let dragged_microsheme_rotation =  0;
 let dragged_microsheme_shift_to_left_up_corner = [0, 0];
+
+// используются, только при корректном draged_microsheme_pos
+let dragged_microsheme_x_quantity = 0, dragged_microsheme_y_quantity = 0;
+
 // ТУТ x1, y1 - это "несдвинутый" (эталоный) угол, типо left_up угол микросхемы при rotation = 0 
 function get_microsheme_shift_corner(shift_to_x1, shift_to_y1, rotation, microsheme_w, microsheme_h) {
     if( rotation == 0 ) return [ shift_to_x1               ,  shift_to_y1               ];
@@ -900,48 +908,51 @@ function get_microsheme_shift_corner(shift_to_x1, shift_to_y1, rotation, microsh
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // ПОЛЕ
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-function new_field(x_quantity, y_quantity) { return new Uint8Array(x_quantity*y_quantity); }
 
-function is_correct_indx(i, j) { return 0 <= i && i < GRINDy_quantity && 0 <= j && j < GRINDx_quantity; }
+function is_correct_indx(i, j) {
+    let [microsheme_x_quantity, microsheme_y_quantity] = get_quantity(CURR_ID);
+    return 0 <= i && i < microsheme_y_quantity && 0 <= j && j < microsheme_x_quantity;
+}
 
+// с проверкой: если pos == -1 - то (i,j) вне поля
+function ij_to_pos(handle_id, i, j) {
+    let [microsheme_x_quantity, microsheme_y_quantity] = get_quantity(handle_id);
+    if( i < 0 || microsheme_y_quantity <= i || j < 0 || microsheme_x_quantity <= j ) return -1;
+    return i * microsheme_x_quantity + j;
+}
 
-const is_block_elevated = new_field(GRINDx_quantity, GRINDy_quantity);
 
 // прикольно было бы отследить где is_layered вызывается в циклах - и использовать там is_block_elevated
 // молимся что компиляторы умею вставлять функцию и выносить if-ы за цикл
 function is_layered(i, j) {
-    if( !is_correct_indx(i, j) ) return 0;
-    return is_block_elevated[i*GRINDx_quantity + j];
+    let    pos = ij_to_pos(CURR_ID, i, j);
+    return pos == -1 ? 0 : is_block_elevated[CURR_ID][pos];
 }
 
-function which_microsheme(i, j) {
-    if( !is_correct_indx(i, j) ) return -1;
-    let {type, rotation, extra_info} = get_block_info(i, j);
-    return type == 5 ? extra_info : -1;
+// УДАЛИТЬ ЭТУ ФУНКЦИЮ
+function which_microsheme(handle_id, i, j) {
+    let pos = ij_to_pos(handle_id, i, j);
+    if( pos == -1 ) return -1;
+    let {type, rotation, extra_info} = get_block_info(handle_id, i, j);
+    if( !is_microsheme_type(type) ) return -1;
+    return get_microsheme_corner(handle_id, pos);
 }
 
-// !!! надо бы сохранять dust_connection и microsheme_connection и не пересчитывать их на каждом кадре
 
-// БУДЕМ РАБОТАТЬ ЧЕРЕЗ ОБЁРТКИ (а то пока хз как лучше хранить данные)
-const field_type       = new_field(GRINDx_quantity, GRINDy_quantity);
-const field_rotation   = new_field(GRINDx_quantity, GRINDy_quantity);
-const field_extra_info = new_field(GRINDx_quantity, GRINDy_quantity);
-// TYPE:  0 - пусто
-//        1 - пыль
-//        2 - факел
-//        3 - повторитель
-//        4 - рычаг
-//        5 - вложенная микросхема (rotation - какая это часть микросхемы) (extra_info - её id)
-//   ( мб 6 - для  угла микросхемы )
+function get_microsheme_corner(handle_id, pos) {
+    if( field_type[handle_id][pos] == 5 ) pos = field_extra_info[handle_id][pos];
+    return pos;
+}
 
 
 // i и j - должны быть КОРРЕКТНЫМИ!!!
-function get_block_info(i, j) {
-    let pos = i*GRINDx_quantity + j;
+function get_block_info(handle_id, i, j) {
+    let handle_x_quantity = get_quantity(handle_id)[0];
+    let pos = i*handle_x_quantity + j;
     // let    get_pos_from = (...args) => args.map(a => a[i]);  // кринж? (чтобы везде не указывать индекс pos)
     // return get_pos_from(field_type, field_rotation, field_extra_info);
     
-    return {type: field_type[pos], rotation: field_rotation[pos], extra_info: field_extra_info[pos]};
+    return {type: field_type[handle_id][pos], rotation: field_rotation[handle_id][pos], extra_info: field_extra_info[handle_id][pos]};
 }
 
 // возвращает [x, y] (ДА, это проклято, ведь принимаем в обратном порядке: i, j)
@@ -950,18 +961,19 @@ function get_block_coords(i, j) {  // блен, такая маленькая ф
 }
 
 function pos_to_ij(pos) {
-    return [Math.trunc(pos/GRINDx_quantity), pos%GRINDx_quantity];
+    let [microsheme_x_quantity, microsheme_y_quantity] = get_quantity(CURR_ID);
+    return [Math.trunc(pos/microsheme_x_quantity), pos%microsheme_x_quantity];
 }
 
 
 function repeater_increase_delay(i, j) {
-    let pos = i*GRINDx_quantity + j;
-    field_extra_info[pos] = (field_extra_info[pos] + 1)%4;
+    let pos = ij_to_pos(CURR_ID, i, j);
+    field_extra_info[CURR_ID][pos] = (field_extra_info[CURR_ID][pos] + 1)%4;
 }
 
 function click_on_lever(i, j) {
-    let pos = i*GRINDx_quantity + j;
-    field_extra_info[pos] = 2 - field_extra_info[pos];
+    let pos = ij_to_pos(CURR_ID, i, j);
+    field_extra_info[CURR_ID][pos] = 2 - field_extra_info[CURR_ID][pos];
 }
 
 
@@ -975,7 +987,7 @@ function calc_dust_connection(i, j) {
         if( !is_correct_indx(i+di, j+dj) ) continue;
 
         let is_next_layered  =      is_layered(i+di, j+dj);
-        let {type, rotation, extra_info} = get_block_info(i+di, j+dj);
+        let {type, rotation, extra_info} = get_block_info(CURR_ID, i+di, j+dj);
 
         // примагничивание к другим редстоун пылинкам
         if( type == 1 ) { connection.push( [dj, di] ); continue; }
@@ -1008,7 +1020,7 @@ function calc_dust_connection(i, j) {
 // эхх, вот бы всевозможные tile заранее предподсчитать, но пока чето лень с этим возиться
 // upd - надо указать draw_ctx
 function draw_tile(i, j) {
-    let {type, rotation, extra_info} = get_block_info(i, j);
+    let {type, rotation, extra_info} = get_block_info(CURR_ID, i, j);
 
     let [x1, y1] = get_block_coords(i, j);
     let xc = x1 + GRINDa/2, yc = y1 + GRINDa/2;
@@ -1045,71 +1057,105 @@ function draw_tile(i, j) {
 }
 
 function place_redstone(i, j, type, rotation = 0, extra_info = 0) {
-    // if( type == 5 ) { place_microsheme(i, j, rotation, extra_info); return; }
+    // if( type == 5 ) { place_microsheme(i, j, rotation, extra_info); return; } - достаточно смело)
     
-    let pos = i*GRINDx_quantity + j;
-    if( field_type[pos] == 5 ) {  // мы никогда не будем втавлятьэлемент на место микросхемы
+    let pos = ij_to_pos(CURR_ID, i, j);
+    if( is_microsheme_type(field_type[CURR_ID][pos]) ) {  // мы никогда не будем втавлятьэлемент на место микросхемы
         console.log("not place redstone on microsheme");
         return;
     }
     // по идеи этой проверки потом не должно быть - так как в place_redstone будет доп параметр - id нужного поля для вставки
 
-    field_type      [pos] = type;
-    field_rotation  [pos] = rotation;
-    field_extra_info[pos] = extra_info;
+    field_type      [CURR_ID][pos] = type;
+    field_rotation  [CURR_ID][pos] = rotation;
+    field_extra_info[CURR_ID][pos] = extra_info;
 }
 
 
-// мб назвать "массовое размещение" ? и сделать place_redstone(...) = place_microsheme(1, 1, ...)
-// !!! ВНИМАНИЕ НА ПОРЯДОК АРГМЕНТОВ:  i, j, x_quantity, y_quantity
-function massive_array_set(arr, value, i, j, x_quantity, y_quantity) {
+// !!! ВНИМАНИЕ НА ПОРЯДОК АРГМЕНТОВ:          i, j, x_quantity, y_quantity
+function massive_array_set(arr, value, i_step, i, j, x_quantity, y_quantity) {
     for(let ii = i; ii < i+y_quantity; ii++) {
-        let pos = ii*GRINDx_quantity + j;
+        let pos = ii*i_step + j;
         for(let jj = 0; jj < x_quantity; jj++, pos++) {
             arr[pos] = value;
         }
     }
 }
 
-function massive_clear_field(i, j, x_quantity, y_quantity) {
-    massive_array_set(field_type, 0, i, j, x_quantity, y_quantity);
+function massive_clear_field(handle_id, i, j, x_quantity, y_quantity) {
+    let handle_x_quantity = get_quantity(handle_id)[0];
+    massive_array_set(field_type[handle_id], 0, handle_x_quantity, i, j, x_quantity, y_quantity);
+
+    // не обязательно, но чтоб по красивее дебаг был:
+    massive_array_set(field_extra_info[handle_id], 0, handle_x_quantity, i, j, x_quantity, y_quantity);
+    massive_array_set(field_rotation  [handle_id], 0, handle_x_quantity, i, j, x_quantity, y_quantity);
 }
 
 
 // не трогает массив is_block_elevated, если микросхема перетирает все блоки - то надо вызывать отдельно
-function place_microsheme(i, j, x_quantity, y_quantity, indx_in_list, type = 5, rotation = 0) {
-    massive_array_set(field_type      ,         type, i, j, x_quantity, y_quantity);
-    massive_array_set(field_rotation  ,     rotation, i, j, x_quantity, y_quantity);
-    massive_array_set(field_extra_info, indx_in_list, i, j, x_quantity, y_quantity);
+function place_microsheme(handle_id, i, j, microsheme_id, rotation = 0) {
+    let handle_x_quantity = get_quantity(handle_id)[0];
+    let pos = i*handle_x_quantity + j;
+
+    // лол, прям бизнес код получается))))) (типо в функции вычисляется то, что было известно в месте вызова - и одно и тоже делается, мммм - зато реально приятнее писать, молимся на компиляторы!)
+    let [      x_quantity,       y_quantity] = get_quantity(microsheme_id);
+    let [cover_x_quantity, cover_y_quantity] = (rotation%2) ? [y_quantity, x_quantity] : [x_quantity, y_quantity];
+
+    massive_array_set(field_type      [handle_id],   5, handle_x_quantity, i, j, cover_x_quantity, cover_y_quantity);
+    massive_array_set(field_extra_info[handle_id], pos, handle_x_quantity, i, j, cover_x_quantity, cover_y_quantity);
+
+    field_type      [handle_id][pos] =             6;
+    field_extra_info[handle_id][pos] = microsheme_id;
+    field_rotation  [handle_id][pos] =      rotation;
 }
 
+
+// тут (i,j) - указывают на угол микросхемы! (type[pos] == 6)
+function clear_microsheme(handle_id, i, j) {
+    let handle_x_quantity = get_quantity(handle_id)[0];
+    let pos = i*handle_x_quantity + j;
+
+    // ДАаа, а как же DRY? (прям такая же присказка как в place_microsheme)
+    let [      x_quantity,       y_quantity] = get_quantity(field_extra_info[handle_id][pos]);
+    let [cover_x_quantity, cover_y_quantity] = (field_rotation[handle_id][pos]%2) ? [y_quantity, x_quantity] : [x_quantity, y_quantity];
+
+    massive_array_set(field_type[handle_id],  0, handle_x_quantity, i, j, cover_x_quantity, cover_y_quantity);
+}
+
+// ТОЖ - зач нужна эта фунция? Пусть лучше вызыватель сам будет делать create_new_microsheme и place_microsheme
 function create_and_place_microsheme(i, j, x_quantity, y_quantity) {
-    let indx_in_list = insert_internal_microsheme(i*GRINDx_quantity + j, one_exsist_microsheme_id);
-    place_microsheme(i, j, x_quantity, y_quantity, indx_in_list);
-    return indx_in_list;
+    let microsheme_id = create_new_microsheme(x_quantity, y_quantity);
+    place_microsheme(i, j, x_quantity, y_quantity, microsheme_id);
+    return microsheme_id;
 }
 
 // получение indx_in_list по какому-то куску (i, j) микросхемы: indx_in_list = get_block_info(i, j).extra_info;
-function delete_microcheme(indx_in_list) {
-    let [microsheme_i1, microsheme_j1] = pos_to_ij( internal_microsheme_poses[ internal_microsheme_list[indx_in_list] ] );
-    delete_internal_microcheme_from_list(indx_in_list);
-    massive_clear_field(microsheme_i1, microsheme_j1, one_exsist_microsheme_x_quantity, one_exsist_microsheme_y_quantity);
+// АЙ, ПОКА НИГДЕ НЕ ИСПОЛЬЗУЕТСЯ ТОЛЬКОМ
+function delete_microcheme(microshem_id) {
+    let [microsheme_i1, microsheme_j1] = pos_to_ij( internal_microsheme_poses[ internal_microsheme_list[microshem_id] ] );
+    let [x_quantity, y_quantity] = get_quantity( microshem_id );
+    delete_microsheme( microshem_id );
+    massive_clear_field(microsheme_i1, microsheme_j1, x_quantity, y_quantity);
 }
 
 
-create_and_place_microsheme(one_exsist_microsheme_i, one_exsist_microsheme_j, one_exsist_microsheme_x_quantity, one_exsist_microsheme_y_quantity);
+let one_exsist_microsheme_i  = 1, one_exsist_microsheme_j = 1;
+let one_exsist_microsheme_x_quantity = 3;
+let one_exsist_microsheme_y_quantity = 2;
+
+let one_exsist_microsheme_id = create_new_microsheme(one_exsist_microsheme_x_quantity, one_exsist_microsheme_y_quantity);
+place_microsheme(CURR_ID, one_exsist_microsheme_i, one_exsist_microsheme_j, one_exsist_microsheme_id);
+
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 
 
 
-
-function last_of(arr) { return arr[arr.length-1]; }
-
 // !!! для определения блоков используется только функция:  is_layered
 function recalc_borders() {
-    let field_is_visited = new Uint8Array(GRINDx_quantity*GRINDy_quantity);
+    let [microsheme_x_quantity, microsheme_y_quantity] = get_quantity(CURR_ID);
+    let field_is_visited = new Uint8Array(microsheme_x_quantity*microsheme_y_quantity);
     let all_circuits = [];
 
     let show_extra_info = 0;
@@ -1134,11 +1180,11 @@ function recalc_borders() {
         draw_label(x1, y1, num, type);
 
         if( type == -1 ) type = is_layered(i, j);
-        field_is_visited[i*GRINDx_quantity + j] = 1;
+        field_is_visited[i*microsheme_x_quantity + j] = 1;
 
         let dij = (type == 0) ? [ [-1, 0], [0, -1], [0, +1], [+1, 0] ] : [ [-1, -1], [-1, 0], [-1, +1], [0, -1], [0, +1], [+1, -1], [+1, 0], [+1, +1] ];
         for(let [di, dj] of dij) {
-            let pos = (i+di)*GRINDx_quantity + (j+dj);
+            let pos = (i+di)*microsheme_x_quantity + (j+dj);
             if( !is_correct_indx(i+di, j+dj) ) expands_to_outside = 1;
             else if( !field_is_visited[pos] && is_layered(i+di, j+dj) == type ) dfs_visit(i+di, j+dj, type);
         }
@@ -1240,9 +1286,9 @@ function recalc_borders() {
     // кароче, чтобы коректно определять полости используется:  expands_to_outside
 
     // поиск неотмеченных территорий и нахождение их "контуров"
-    for(let i = 0; i < GRINDy_quantity; i++)
-    for(let j = 0; j < GRINDx_quantity; j++) {
-        let pos = i*GRINDx_quantity + j;
+    for(let i = 0; i < microsheme_y_quantity; i++)
+    for(let j = 0; j < microsheme_x_quantity; j++) {
+        let pos = i*microsheme_x_quantity + j;
         if( field_is_visited[pos] ) continue;
         expands_to_outside = 0;
         dfs_visit(i, j); num++;
@@ -1339,31 +1385,35 @@ function draw_grind(x1, y1, a, x_quantity, y_quantity) {
 
     // рисуем ареалы (рамки) вложенных микросхем
     delvar_curr_areal_clr = 0;
-    for(let indx = 0; indx < internal_microsheme_poses.length; indx++) {
-        let poses = internal_microsheme_poses[indx];
-        let [i, j] = pos_to_ij(poses);
-        if( poses == draged_microsheme_poses ) {  // не рисуем на поле перетаскиваемую микросхему
-            console.log("skip microsheme at: ", i, j);
-            continue;
+    // по идеи бы тут, только по pos вложенных микросхем проитерироваться
+    for(let i = 0; i < y_quantity; i++)
+    for(let j = 0; j < x_quantity; j++) 
+        if( field_type[CURR_ID][i*x_quantity + j] == 6 ) {
+            let pos = i*x_quantity + j;
+            let microshem_id = field_extra_info[CURR_ID][pos];
+            let rotation     = field_rotation  [CURR_ID][pos];
+
+            if( pos == draged_microsheme_pos ) {  // не рисуем на поле перетаскиваемую микросхему
+                console.log("skip microsheme at: ", i, j);
+                continue;
+            }
+
+
+            console.log("draw microsheme at: ", i, j);
+            let [x1, y1] = get_block_coords(i, j);
+
+            
+            let [microsheme_x_quantity, microsheme_y_quantity] = get_quantity(microshem_id);
+            
+
+            let [cover_x_quantity, cover_y_quantity] = ( rotation%2 ) ? [microsheme_y_quantity, microsheme_x_quantity] : [microsheme_x_quantity, microsheme_y_quantity];
+            ctx.clearRect(x1, y1, cover_x_quantity*GRINDa, cover_y_quantity*GRINDa);
+
+            ctx_rotate_and_reper(ctx, rotation, x1, y1);
+            let [verxtex_shift_x, verxtex_shift_y] = [(rotation == 2 || rotation == 1) ? -microsheme_x_quantity*GRINDa : 0, (rotation == 3 || rotation == 2) ? -microsheme_y_quantity*GRINDa : 0];
+            draw_microsheme(ctx, verxtex_shift_x, verxtex_shift_y, one_exsist_microsheme_scale, microshem_id);
+            ctx_rotate_and_reper(ctx, 0);
         }
-
-
-        console.log("draw microsheme at: ", i, j);
-        let [x1, y1] = get_block_coords( ...pos_to_ij(poses) );
-
-        
-        let x_quantity = one_exsist_microsheme_x_quantity, y_quantity = one_exsist_microsheme_y_quantity;
-        
-        let rotation = field_rotation[poses];
-
-        let [cover_x_quantity, cover_y_quantity] = ( rotation%2 ) ? [y_quantity, x_quantity] : [x_quantity, y_quantity];
-        ctx.clearRect(x1, y1, cover_x_quantity*GRINDa, cover_y_quantity*GRINDa);
-
-        ctx_rotate_and_reper(ctx, rotation, x1, y1);
-        let [verxtex_shift_x, verxtex_shift_y] = [(rotation == 2 || rotation == 1) ? -x_quantity*GRINDa : 0, (rotation == 3 || rotation == 2) ? -y_quantity*GRINDa : 0];
-        draw_microsheme(ctx, verxtex_shift_x, verxtex_shift_y, x_quantity, y_quantity, one_exsist_microsheme_scale, indx);
-        ctx_rotate_and_reper(ctx, 0);
-    }
 
     // ДЕБАГ информация
     ctx.font         = 'bold 10px Arial';
@@ -1373,7 +1423,7 @@ function draw_grind(x1, y1, a, x_quantity, y_quantity) {
     for(let i = 0; i < y_quantity; i++)
     for(let j = 0; j < x_quantity; j++) {
         let [x1, y1] = get_block_coords(i, j);
-        let {type,   rotation,   extra_info} = get_block_info(i, j);
+        let {type,   rotation,   extra_info} = get_block_info(CURR_ID, i, j);
         if(  type || rotation || extra_info ) {
             ctx.fillText(String(type) + " " + String(extra_info), x1+5, y1+10);
             ctx.fillText(String(rotation), x1+5, y1+20);
@@ -1390,17 +1440,17 @@ function draw_segment(x1, y1, x2, y2, moving = 0) {
 
 
 // overlap_type:
-//     -1  -  перекрытие не подсчитанно
-//      0  -  нет перекрытия ни с какими ореолами
-//      1  -  перекрыто ореолом от блока (указать бы какого - а хотя вроде не важно, сейчас это не используется, так как единственное место где нужно знать какой блок это auto_rotation иконки под курсором, но там это через near_side и отдельную логику считается)
-//   2+id  -  перекрыто ореолом от микросхемой id (НЕАААТ, опять сдвиги. Нет бы чтобы сделать overlap_type через enum, и если overlap_type >= 2 то вызывать "декодировщик" get_overlap_id(overlap_type) (который только вычитает два). - НЕТ ТАК БУДЕТ БОЛЬШЕ КОДА) 
+//      -1  -  перекрытие не подсчитанно
+//       0  -  нет перекрытия ни с какими ореолами
+//       1  -  перекрыто ореолом от блока (указать бы какого - а хотя вроде не важно, сейчас это не используется, так как единственное место где нужно знать какой блок это auto_rotation иконки под курсором, но там это через near_side и отдельную логику считается)
+//   2+pos  -  перекрыто ореолом от микросхемой С УГОЛОМ в pos (НЕАААТ, опять сдвиги. Нет бы чтобы сделать overlap_type через enum, и если overlap_type >= 2 то вызывать "декодировщик" get_overlap_id(overlap_type) (который только вычитает два). - НЕТ ТАК БУДЕТ БОЛЬШЕ КОДА) 
 
 // какой тип перекрытия может дать ячейка (i, j) своим соседям
-function type_overlap_from(i, j, account_layered) {
-    // account_layered - чтобы сэканомить один вызов is_layered, в случае account_layered == 0 (кринж конечно, но ладно - терпимо, всего лишь одна доп переменная)
-    if( !is_correct_indx(i, j) ) return 0;
-    let at_microsheme  = which_microsheme(i, j);
-    if( at_microsheme != -1 ) return 2+at_microsheme;
+// account_layered - чтобы сэканомить один вызов is_layered, в случае account_layered == 0 (кринж конечно, но ладно - терпимо, всего лишь одна доп переменная)
+function type_overlap_from(handle_id, i, j, account_layered) {
+    let pos = ij_to_pos(handle_id, i, j);
+    if( pos == -1 ) return 0;
+    if( is_microsheme_type(field_type[handle_id][pos]) ) return 2 + get_microsheme_corner(handle_id, pos);
     return account_layered && is_layered(i, j);
 }
 
@@ -1412,7 +1462,7 @@ function xy_to_raw_ij(x, y) {
 
 // ВОЗВРАЩАЕТ [j, i, overlap_type]  (?? мб ещё overlaped_direction - нееее, будем прост в глобальную переменную сохранять)
 // по идее при дальнейшем развитии должны будем находить: [microsheme_id, j, i, overlap_type]
-function which_covered(x, y, calc_overlap = 0) {  // allow_cancelation = 1) {
+function which_covered(handle_id, x, y, calc_overlap = 0) {  // allow_cancelation = 1) {
     // ЭХХ, так жалко эту (allow_cancelation) переменную удалять - оказывается решение на много проще
     //     allow_cancelation:  0 - если точка находится в сетке, то возвращается номер ячейки
     //                         1 - если эта ячейка покрыта ореолом от блока,        то return [-1, -1]
@@ -1430,7 +1480,8 @@ function which_covered(x, y, calc_overlap = 0) {  // allow_cancelation = 1) {
     let result_i = i, result_j = j;
     if( !is_correct_indx(i, j) ) {
         // АЙ, короче, просто заифаю когда мы кликаем за "оболочкой" поля
-        if( i < -1 || j < -1 || i > GRINDy_quantity || j > GRINDx_quantity) return [-1, -1, -1];
+        let [microsheme_x_quantity, microsheme_y_quantity] = get_quantity(CURR_ID);
+        if( i < -1 || j < -1 || i > microsheme_y_quantity || j > microsheme_x_quantity) return [-1, -1, -1];
 
         // (i, j) - на "оболочке": Если i неккоректный, то он либо i == -1, либо i == y_quantity. Аналогично j.
         result_i = -1;
@@ -1443,8 +1494,10 @@ function which_covered(x, y, calc_overlap = 0) {  // allow_cancelation = 1) {
     // "бизнес-логика" часть
 
     // НЕ КРУТО ЧТО: тут используются функции с проверкой аргумента на коректность (в каждой ф-ии). А кажется что which_covered функция которая ЧАСТО ВЫЗЫВАЕТСЯ!
-    let at_microsheme = which_microsheme(i, j);
+    let at_microsheme = which_microsheme(CURR_ID, i, j);
     let at_layered    =    is_layered   (i, j);
+
+    console.log('possible it microsheme: pos =', at_microsheme);
 
     // ! (к счастью) GRINDda одинаковый как для блоков так и для края микросхемы
     let limit_distance = ( at_microsheme == -1 ? GRINDda : GRINDda/one_exsist_microsheme_scale );
@@ -1464,17 +1517,17 @@ function which_covered(x, y, calc_overlap = 0) {  // allow_cancelation = 1) {
     let dxy = [ [+1, 0], [0, -1], [-1, 0], [0, +1] ];
 
     // Рассматриваем suggest1:
-    let t1 = type_overlap_from(i + dxy[suggest1][1], j + dxy[suggest1][0], !at_layered), t2 = 0, t3 = 0;
+    let t1 = type_overlap_from(handle_id, i + dxy[suggest1][1], j + dxy[suggest1][0], !at_layered), t2 = 0, t3 = 0;
     if( t1 >= 2 ) return [result_j, result_i, t1];
 
     if( suggest2 != 4 ) {
         // Рассматриваем suggest2:
-        t2 = type_overlap_from(i + dxy[suggest2][1], j + dxy[suggest2][0], !at_layered);
+        t2 = type_overlap_from(handle_id, i + dxy[suggest2][1], j + dxy[suggest2][0], !at_layered);
         if( t2 >= 2 ) return [result_j, result_i, t2];
 
         // Рассматриваем угловую ячейку: (! suggest1 и suggest2 - обязаны быть соседними направлениями )
         // - ИМБА, одна из dx1, dx2 - точно ноль, а вторая определяет напрваление для угловой ячейки
-        t3 = type_overlap_from(i + dxy[suggest1][1] + dxy[suggest2][1], j + dxy[suggest1][0] + dxy[suggest2][0], !at_layered);
+        t3 = type_overlap_from(handle_id, i + dxy[suggest1][1] + dxy[suggest2][1], j + dxy[suggest1][0] + dxy[suggest2][0], !at_layered);
         if( t3 >= 2 ) return [result_j, result_i, t3];
     }
 
@@ -1498,7 +1551,7 @@ function near_side(x, y, limit_distance = border_cross_scale*GRINDa, is_knowing_
     //       (забавно: near_side и which_covered(.., allow_cancelation != 0) - циклично связаны       )
 
     if( !is_knowing_ij ) {
-        [knowing_j, knowing_i] = which_covered(x, y, 0);
+        [knowing_j, knowing_i] = which_covered(CURR_ID, x, y, 0);
         if( knowing_i == -1 ) return [4, 4];
     }
 
@@ -1604,15 +1657,12 @@ function redraw_under_cursor_obj(which = curr_showed_obj) {
     // рисуем вкладываемую микросхему
     // TODO: микросхема должа быть отрисованна в виде отдельного холста и рисоваться в следующем блоке: "рисуем редстоун компонент"
     if( which == 5 ) {
-        // draged_microsheme_list_indx;
+        // draged_microsheme_pos;
         let x1 = mouse_x - curr_showed_obj_shift[0], y1 = mouse_y - curr_showed_obj_shift[1];
-
-        let x_quantity = one_exsist_microsheme_x_quantity, y_quantity = one_exsist_microsheme_y_quantity;
-        
         
         // А ЗДЕСЬ НУЖЕН УЧЕТ ПОВОРОТА ДЛЯ НАХОЖДЕНИЯ x1, y1 затемнение области куда вставляется микросхема
-        let [cover_x_quantity, cover_y_quantity] = ( dragged_microsheme_rotation%2 ) ? [y_quantity, x_quantity] : [x_quantity, y_quantity];
-        draw_microsheme_drag_cover(above_ctx, mouse_x - dragged_microsheme_shift_to_left_up_corner[0], mouse_y - dragged_microsheme_shift_to_left_up_corner[1], cover_x_quantity, cover_y_quantity, one_exsist_microsheme_scale);
+        let [cover_x_quantity, cover_y_quantity] = ( dragged_microsheme_rotation%2 ) ? [dragged_microsheme_y_quantity, dragged_microsheme_x_quantity] : [dragged_microsheme_x_quantity, dragged_microsheme_y_quantity];
+        draw_microsheme_drag_cover(above_ctx, mouse_x - dragged_microsheme_shift_to_left_up_corner[0], mouse_y - dragged_microsheme_shift_to_left_up_corner[1], cover_x_quantity, cover_y_quantity);
         
         // ДА УЖ, с учётом поворота, хотелось бы что бы вызывалась: => НАДО СДЕЛАТЬ НАКОНЕЦ canvas МИКРОСХЕМЫ (пока что просто сетка)
         // И ЧТОБЫ НЕ НАД БЫЛО ЗДЕСЬ ЗАДАВАТЬ НИКАК ПОВОРОТ, А ТОЛЬКОВЫЗОВ НУЖНОГО ctx_rotate
@@ -1620,7 +1670,7 @@ function redraw_under_cursor_obj(which = curr_showed_obj) {
         //        above_ctx.drawImage(icon_to_draw, mouse_x - a/2, mouse_y - b/2);
         //        ctx_rotate(above_ctx, 0);
         ctx_rotate_and_reper(above_ctx, dragged_microsheme_rotation, mouse_x, mouse_y);
-        draw_microsheme     (above_ctx, curr_showed_obj_shift[0], curr_showed_obj_shift[1], x_quantity, y_quantity, one_exsist_microsheme_scale);
+        draw_microsheme     (above_ctx, curr_showed_obj_shift[0], curr_showed_obj_shift[1], one_exsist_microsheme_scale);
         ctx_rotate_and_reper(above_ctx, 0);
         return;
     }
@@ -1629,7 +1679,7 @@ function redraw_under_cursor_obj(which = curr_showed_obj) {
     if( which > 0 ) {
         let a = redstone_icons.dust.width, b = redstone_icons.dust.height;
 
-        let [j, i] = which_covered(mouse_x, mouse_y, 0);
+        let [j, i] = which_covered(CURR_ID, mouse_x, mouse_y, 0);
 
         if( which == 1 ) {  // редстоун пыль
             let connection = calc_dust_connection(i, j);
@@ -1684,7 +1734,7 @@ function redraw_under_cursor_obj(which = curr_showed_obj) {
         let a  = 2*GRINDda + GRINDa;
         let x1 = mouse_x - a/2 + 0.5, y1 = mouse_y - a/2 + 0.5;
         
-        let [j, i, type_overlap] = which_covered(mouse_x, mouse_y, 1);
+        let [j, i, type_overlap] = which_covered(CURR_ID, mouse_x, mouse_y, 1);
 
         if( type_overlap <= 0 && !is_layered(i, j) ) {
             draw_block(above_ctx, x1, y1, a, x1, y1, a);
@@ -1730,13 +1780,13 @@ let is_LBM_first_click = 1;
 let is_LBM_pressed     = 0;
 let is_LBM_block_confiscate = 0;
 function LBM_click_on(x, y) {
-    let [j, i] = which_covered(x, y, curr_showed_obj <= 0);
+    let [j, i] = which_covered(CURR_ID, x, y, curr_showed_obj <= 0);
 
     if( i == -1 ) { is_LBM_first_click = 0; return; }
     
     // Не заменяем уже поставленные блоки
     // Однако если в руке воздух то всегда заменяем (типо удаляем)
-    if( (curr_showed_obj != 0) && !is_LBM_first_click && get_block_info(i, j).type ) return;
+    if( (curr_showed_obj != 0) && !is_LBM_first_click && get_block_info(CURR_ID, i, j).type ) return;
     
     if( curr_showed_obj == -1 ) {  // размещение блока
         // чтобы не было что мы в одной ячейке забрали блок и, чуть сместив мышку, обратно его поставили
@@ -1777,8 +1827,9 @@ function LBM_click_on(x, y) {
 let cnt_of_redraws = 0;
 function redraw() {
     // ctx.clearRect(0, 0, my_canvas.width, my_canvas.height);  - а нафига это тут? (оставил для исторической справки)
-    console.log('[' + String(cnt_of_redraws++) + ']===================================');
-    draw_grind(GRINDx1, GRINDy1, GRINDa, GRINDx_quantity, GRINDy_quantity);
+    console.log('[' + String(cnt_of_redraws++) + ']===================================');    
+    let [microsheme_x_quantity, microsheme_y_quantity] = get_quantity(CURR_ID);
+    draw_grind(GRINDx1, GRINDy1, GRINDa, microsheme_x_quantity, microsheme_y_quantity);
 }
 
 
@@ -1833,9 +1884,9 @@ function RBM_click_on(x, y) {
     let this_first_moment = is_first_moment_RBM_pressed;
     is_first_moment_RBM_pressed = 0;
 
-    let [j, i, overlap_type] = which_covered(x, y, 1);
+    let [j, i, overlap_type] = which_covered(CURR_ID, x, y, 1);
 
-    if( draged_microsheme_list_indx != -1 ) return;
+    if( draged_microsheme_pos != -1 ) return;
 
     if( this_first_moment && overlap_type >= 2 ) {  // это перетаскивание микросхемы
         // НАДО БЫ УМЕТЬ ЗАМЕНЯТЬ ТЕКУЩУЮ ОТОБРАЖАЕМУЮ ИКОНКУ НА МИКРОСХЕМУ
@@ -1846,19 +1897,22 @@ function RBM_click_on(x, y) {
         // curr_showed_obj
 
         curr_showed_obj             = 5;
-        draged_microsheme_list_indx = overlap_type - 2;
-        draged_microsheme_poses     = internal_microsheme_poses[ internal_microsheme_list[draged_microsheme_list_indx] ];
-        dragged_microsheme_rotation = field_rotation[draged_microsheme_poses];
+
+        draged_microsheme_pos       = overlap_type - 2;
+        dragged_microsheme_rotation = field_rotation  [CURR_ID][draged_microsheme_pos];
+
+        let rotation = dragged_microsheme_rotation;
         
-        let [microsheme_x1, microsheme_y1] = get_block_coords( ...pos_to_ij(draged_microsheme_poses) );
-
-        let x_quantity = one_exsist_microsheme_x_quantity;
-        let y_quantity = one_exsist_microsheme_y_quantity;
-        let rotation   = field_rotation[draged_microsheme_poses];
-
-        let [cover_x_quantity, cover_y_quantity] = ( rotation%2 ) ? [y_quantity, x_quantity] : [x_quantity, y_quantity];
-
         
+        let [x_quantity, y_quantity] = get_quantity( field_extra_info[CURR_ID][draged_microsheme_pos] );
+        dragged_microsheme_x_quantity = x_quantity;
+        dragged_microsheme_y_quantity = y_quantity;
+        
+        
+        let [cover_x_quantity, cover_y_quantity] = ( rotation%2 ) ? [dragged_microsheme_y_quantity, dragged_microsheme_x_quantity] : [dragged_microsheme_x_quantity, dragged_microsheme_y_quantity];
+        
+        
+        let [microsheme_x1, microsheme_y1] = get_block_coords( ...pos_to_ij(draged_microsheme_pos) );
         dragged_microsheme_shift_to_left_up_corner[0] = -microsheme_x1 + x;
         dragged_microsheme_shift_to_left_up_corner[1] = -microsheme_y1 + y;
 
@@ -1896,7 +1950,7 @@ function RBM_click_on(x, y) {
     // ааа, какая лапша (чтобы: если мы поменяли ячейку и текущая ячейка не повторитель - то отменяем счётчик)
     if( i == -1 ) { RBM_delete_alarm(); return; }
 
-    let type = get_block_info(i, j).type;
+    let type = get_block_info(CURR_ID, i, j).type;
 
     if( type == 3 ) RBM_click_on_repeater(i, j); // нажали на повторитель
     else            RBM_delete_alarm();
@@ -1908,7 +1962,7 @@ function RBM_click_on(x, y) {
 
 let mouse_whell_click = [-1, -1];
 function copy_to_hand_from(i, j) {
-    let {type, rotation, extra_info} = get_block_info(i, j);
+    let {type, rotation, extra_info} = get_block_info(CURR_ID, i, j);
 
     if( type == 0 ) {
         if( is_layered(i, j) ) {
@@ -1969,13 +2023,13 @@ document.addEventListener('mouseup', (event) => {
         // КОНЕЦ перетаскивания микросхемы инвентаря
         if( curr_showed_obj == 5 ) {
             let microsheme_x1 = mouse_x - dragged_microsheme_shift_to_left_up_corner[0], microsheme_y1 = mouse_y - dragged_microsheme_shift_to_left_up_corner[1];
-            finish_microsheme_drag(microsheme_x1, microsheme_y1);
+            finish_microsheme_drag_at(microsheme_x1, microsheme_y1);
             change_showed_obj_to(curr_framed_obj);
         }
     }
 
     if( event.button == 1 ) {  // нажали на колесико мышки
-        let [j, i] = which_covered(mouse_x, mouse_y, 1);
+        let [j, i] = which_covered(CURR_ID, mouse_x, mouse_y, 1);
         if( i != -1 && mouse_whell_click[0] == i && mouse_whell_click[1] == j ) {  // коректный клик колесиком мышки
             copy_to_hand_from(i, j);
         }
@@ -1989,7 +2043,7 @@ document.addEventListener('mousedown', (event) => {
 
 
     if( event.button == 1 ) {  // нажали на колесико мышки
-        let [j, i] = which_covered(mouse_x, mouse_y, 1);
+        let [j, i] = which_covered(CURR_ID, mouse_x, mouse_y, 1);
         mouse_whell_click = [i, j];
         event.preventDefault();
     }
@@ -2221,8 +2275,10 @@ function change_showed_obj_to(which) {
         // ЕСЛИ во время перетаскивания микросхемы нажали escape (т.е. сменили на объект air) - то возвращаем предыдущий показываемый редстоун компонент
         if( which == 0 ) which = curr_framed_obj;  // БЛИН, нет бы, не связывать escape и KEY_air.....
         
-        // TODO: ДАААА, ТУТ БЫ ТОЛЬКО reset_microsheme_drag_settings() и redraw() ВЫЗЫВАТЬ!!!!
-        finish_microsheme_drag(mouse_x, mouse_y, 1);
+        if( draged_microsheme_pos != -1 ) {  // 
+            reset_microsheme_drag_settings();
+            redraw();
+        }
     }
 
     let logging_msg = 'select object:' + get_obj_name(which);
@@ -2301,7 +2357,8 @@ document.addEventListener('keydown', (event) => {
             
             dragged_microsheme_rotation = (dragged_microsheme_rotation+1)%4;
 
-            let [shift_x, shift_y] = get_microsheme_shift_corner(curr_showed_obj_shift[0], curr_showed_obj_shift[1], dragged_microsheme_rotation, one_exsist_microsheme_x_quantity*GRINDa, one_exsist_microsheme_y_quantity*GRINDa)
+
+            let [shift_x, shift_y] = get_microsheme_shift_corner(curr_showed_obj_shift[0], curr_showed_obj_shift[1], dragged_microsheme_rotation, dragged_microsheme_x_quantity*GRINDa, dragged_microsheme_y_quantity*GRINDa)
             dragged_microsheme_shift_to_left_up_corner[0] = -shift_x;
             dragged_microsheme_shift_to_left_up_corner[1] = -shift_y;
 
@@ -2348,20 +2405,20 @@ function replace_dust(i, j) {
 }
 
 function replace_block(i, j) {
-    let pos = i*GRINDx_quantity + j;
-    if( field_type[pos] == 5 ) {  // мы никогда не будем втавлятьэлемент на место микросхемы
+    let pos = ij_to_pos(CURR_ID, i, j);
+    if( is_microsheme_type(field_type[CURR_ID][pos]) ) {  // мы никогда не будем втавлятьэлемент на место микросхемы
         console.log("not place block on microsheme");
         return;
     }
     
-    let sign = (is_block_elevated[pos] == 0) ? +1 : -1;
-    is_block_elevated[pos] = !is_block_elevated[pos];
+    let sign = (is_block_elevated[CURR_ID][pos] == 0) ? +1 : -1;
+    is_block_elevated[CURR_ID][pos] = !is_block_elevated[CURR_ID][pos];
 
     // удаляем блок -> удаляем прикрепленные факелы/рычаги
     if( sign == -1 ) {
         for(let [di, dj, to_del] of [ [0, +1, 2], [-1, 0, 3], [0, -1, 0], [+1, 0, 1] ]) {
             if( !is_correct_indx(i+di, j+dj) ) continue;
-            let {type, rotation} = get_block_info(i+di, j+dj);
+            let {type, rotation} = get_block_info(CURR_ID, i+di, j+dj);
             if( (type == 2 || type == 4) && rotation == to_del ) place_redstone(i+di, j+dj, 0);
         }
     }
@@ -2447,7 +2504,7 @@ function animation_load_circle(curr_timestamp) {  // curr_timestamp - перед
     above_ctx.clearRect(0, 0, WW, HH);
 
     //MIKU_EDIT: ЭТО КАЖЕТСЯ АД (типо при перетаскивании иконки инвентаря мы можем ещё начать перетаскивать микросхему)
-    if( draged_microsheme_list_indx != -1 ) redraw_under_cursor_obj();
+    if( draged_microsheme_pos != -1 ) redraw_under_cursor_obj();
 
     let need_redraw_inventory = 0;
 
@@ -2656,7 +2713,8 @@ background_img.onload = tryInit;
 
 
 function init() {
-    draw_grind(GRINDx1, GRINDy1, GRINDa, GRINDx_quantity, GRINDy_quantity);
+    let [microsheme_x_quantity, microsheme_y_quantity] = get_quantity(CURR_ID);
+    draw_grind(GRINDx1, GRINDy1, GRINDa, microsheme_x_quantity, microsheme_y_quantity);
     redraw_inventory(curr_framed_obj);
 }
 
