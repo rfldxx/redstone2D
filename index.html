@@ -501,7 +501,7 @@ background_img.src = 'background2.jpg'; //'background.png';
 
 // рисуем блок
 function draw_block(draw_ctx, from_x1, from_y1, from_a, to_x1, to_y1, to_a) {
-    let [x_quantity, y_quantity] = get_quantity(CURR_ID);
+    let [x_quantity, y_quantity] = get_field_quantity(CURR_ID);
     let XX = 2*GRINDda + x_quantity * GRINDa, YY = 2*GRINDda + y_quantity * GRINDa;
     let scale_x = background_img.width  / XX;
     let scale_y = background_img.height / YY;
@@ -561,14 +561,24 @@ function ctx_rotate_and_reper(draw_ctx, t, xc = 0, yc = 0) {
 function new_array(N) { return new Uint8Array(N); }
 
 
-// !!! todo: Ай пока захардкожен размер (потом бы как vector перевыделять при переполнении)
-const all_quantities = new_array(1000);  // в 2*i - хранится x_quantity, в 2*i+1 - y_quantity
-// ПОКА СТРАННО ЧТО делать с INSCALE или как там его..
-// СЕЙЧАС x_quantity - это размер занимаемой микросхемой ПРИ ВСТАВКЕ (А НЕ КОЛИЧЕСТВО КЛЕТОК В НЕЙ)
+// todo: Ай пока захардкожен размер (потом бы как vector перевыделять при переполнении)
+// хранение: [4*i] - field_x_quantity, [4*i+1] - filed_y_quantity, [4*i+2] - paste_x_quantity, [4*i+3] - paste_y_quantity
+const all_quantities = new_array(2000);  
 
-function get_quantity(microshem_id) {
-    return [ all_quantities[2*microshem_id], all_quantities[2*microshem_id+1] ];
+const all_inscales   = new_array( 500);
+
+// КАК УДОБНО! - достаточно (надеюсь..) просто изменить все вхождения get_quantity
+function get_field_quantity(microshem_id) {
+    return [ all_quantities[4*microshem_id], all_quantities[4*microshem_id+1] ];
 }
+
+function get_paste_quantity(microshem_id, rotation = 0) {
+    let x_quantity = all_quantities[4*microshem_id+2], y_quantity = all_quantities[4*microshem_id+3]
+    return (rotation%2) ? [y_quantity, x_quantity] : [x_quantity, y_quantity];
+}
+
+// мне точно такое нужно?!!.....
+function get_in_scale(microshem_id) { return all_inscales[microshem_id]; }
 
 // !!! надо бы сохранять dust_connection и microsheme_connection и не пересчитывать их на каждом кадре
 
@@ -595,14 +605,19 @@ const is_block_elevated = [];
 
 // СОЗДАНИЕ новой микросхемы - // возвращает индекс:  microsheme_id
 // ! todo: похорошему переделать на связный список
-function create_new_microsheme(x_quantity, y_quantity) {
+function create_new_microsheme(x_quantity, y_quantity, in_scale) {
     if( cnt_microshemes >= 500 ) throw new Error('ПОКА ПОДДЕРЖИВАЕТСЯ ТОЛЬКО 500 МИКРОСХЕМ за всё время жизни программы!');
-    all_quantities[2*cnt_microshemes  ] = x_quantity;
-    all_quantities[2*cnt_microshemes+1] = y_quantity;
+    let field_x_quantity = in_scale*x_quantity, field_y_quantity = in_scale*y_quantity;
+    
+    all_quantities[4*cnt_microshemes  ] = field_x_quantity;
+    all_quantities[4*cnt_microshemes+1] = field_y_quantity;
+    all_quantities[4*cnt_microshemes+2] =       x_quantity;
+    all_quantities[4*cnt_microshemes+3] =       y_quantity;
+    all_inscales  [  cnt_microshemes  ] = in_scale;    
 
     // просто, что за дебильное наименование const
-    const N = x_quantity * y_quantity;
-    field_type       .push( new_array(N) ); 
+    const N = field_x_quantity * field_y_quantity;
+    field_type       .push( new_array(N) );
     field_rotation   .push( new_array(N) );
     field_extra_info .push( new_array(N) );
     is_block_elevated.push( new_array(N) );
@@ -621,12 +636,11 @@ function delete_microsheme(microsheme_id) {
 
 
 let GRINDx_quantity = 12, GRINDy_quantity = 7;
-create_new_microsheme(GRINDx_quantity, GRINDy_quantity);
+create_new_microsheme(GRINDx_quantity, GRINDy_quantity, 1);
 let CURR_ID = 0;
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // ВЛОЖЕННАЯ МИКРОСХЕМА
-let one_exsist_microsheme_scale = 3;
 
 
 
@@ -663,11 +677,19 @@ function draw_microsheme_areal(draw_ctx, x1, y1, x_quantity, y_quantity, in_scal
 
 }
 
+// капец сложно с этим in_scale - как лучше когда у нас будет произвольная вложенность? Делать ctx.transform или в функциях поддерживать произвольный scale? Первое как будто проще
 function draw_microsheme(draw_ctx, x1, y1, in_scale, microsheme_id = -1) {
     let draw_dragging = ( microsheme_id == -1 );
 
-    let [x_quantity, y_quantity] = (!draw_dragging) ? get_quantity(microsheme_id) : [dragged_microsheme_x_quantity, dragged_microsheme_y_quantity];
+    let [x_quantity, y_quantity] = (!draw_dragging) ? get_paste_quantity(microsheme_id) : [dragged_microsheme_x_quantity, dragged_microsheme_y_quantity];
+    
+    
+    // по идеи этого фрагмента не должно будет быть - типо будем брать сразу canvas
+    // let  in_scale                      = (!draw_dragging) ? get_in_scale      (microsheme_id) : dragged_microsheme_in_scale;
+    // let [in_x_quantity, in_y_quantity] = (!draw_dragging) ? get_field_quantity(microsheme_id) : [dragged_microsheme_x_quantity, dragged_microsheme_y_quantity];
     draw_only_grind(draw_ctx, x1, y1, in_scale*x_quantity, in_scale*y_quantity, GRINDa/in_scale, 0.5);
+    
+
     draw_only_grind(draw_ctx, x1, y1, x_quantity, y_quantity, GRINDa, 1);
 
     // может сразу тут рамку рисовать?
@@ -682,10 +704,9 @@ function draw_microsheme(draw_ctx, x1, y1, in_scale, microsheme_id = -1) {
     let x2 = x1 + x_quantity*GRINDa, y2 = y1 + y_quantity*GRINDa;
     let logging_txt = 'microsheme_id: ';
     if( draw_dragging ) {
-        // пока так - это только для дебага - на "РЕЛИЗЕ" (лул) надо удалить
-        microsheme_id = field_extra_info[CURR_ID][draged_microsheme_pos];
+        microsheme_id = draged_microsheme_id;
 
-        logging_txt = 'drag from pos ' + String(draged_microsheme_pos) + ' | microsheme_id: ';
+        logging_txt = 'drag from pos: ' + String(draged_microsheme_pos) + ' | microsheme_id: ';
 
         draw_ctx.beginPath();
         draw_ctx.moveTo(0, 0);
@@ -710,7 +731,7 @@ function magnetize_microsheme_to_grid(x, y, x_quantity, y_quantity) {
     if( 2*(x - x1) > GRINDa ) { j++; x1 += GRINDa; }
     if( 2*(y - y1) > GRINDa ) { i++; y1 += GRINDa; }
 
-    let [microsheme_x_quantity, microsheme_y_quantity] = get_quantity(CURR_ID);
+    let [microsheme_x_quantity, microsheme_y_quantity] = get_field_quantity(CURR_ID);
     if( i < 0 || j < 0 || i+y_quantity > microsheme_y_quantity || j+x_quantity > microsheme_x_quantity ) return [-1, -1, x, y];
     return [i, j, x1, y1];
 }
@@ -765,8 +786,8 @@ function draw_microsheme_drag_cover(draw_ctx, x, y, x_quantity, y_quantity) {
     }
     let last_hovered = -1;
     
-
-    let handle_microsheme_x_quantity = get_quantity(CURR_ID)[0];
+    // upd: по хорошему это через "маску" надо делать (вроде писал в каком-то "коммите")
+    let handle_microsheme_x_quantity = get_field_quantity(CURR_ID)[0];
     for(let di = 0; di < y_quantity; di++) {
         let pos = (i+di)*handle_microsheme_x_quantity + j;
         for(let dj = 0; dj < x_quantity; dj++, pos++) {
@@ -800,8 +821,9 @@ function draw_microsheme_drag_cover(draw_ctx, x, y, x_quantity, y_quantity) {
 
     for(let pos of hovered_microshemes_poses) {
         let microsheme_id = field_extra_info[CURR_ID][pos];
-        let [overlap_microsheme_x1, overlap_microsheme_y1] = get_block_coords( ...pos_to_ij(pos) );
-        let [overlap_microsheme_x_quantity, overlap_microsheme_y_quantity] = get_quantity(microsheme_id);
+        let rotation      = field_rotation[CURR_ID][pos];
+        let [overlap_microsheme_x_quantity, overlap_microsheme_y_quantity] = get_paste_quantity(microsheme_id, rotation);
+        let [overlap_microsheme_x1, overlap_microsheme_y1] = get_block_coords( ...pos_to_ij(CURR_ID, pos) );
         draw_ctx.fillRect(overlap_microsheme_x1, overlap_microsheme_y1, overlap_microsheme_x_quantity*GRINDa, overlap_microsheme_y_quantity*GRINDa);
     }
 
@@ -810,75 +832,83 @@ function draw_microsheme_drag_cover(draw_ctx, x, y, x_quantity, y_quantity) {
 
 
 function finish_microsheme_drag_at(x, y) {
-    let draged_microsheme_id = field_extra_info[CURR_ID][draged_microsheme_pos];
-
-    // пхпх, подобие raii (копируем в локальные переменные, а затем reset-аям то что должно происходить при return-е)
-    let is_overlaping = is_dragging_microsheme_overlap_redstone || hovered_microshemes_poses.length;
-    let overlap_microsheme_poses = hovered_microshemes_poses;
-    
     // draged_microsheme_pos
-    let [x_quantity, y_quantity] = [dragged_microsheme_x_quantity, dragged_microsheme_y_quantity]
-    let [prev_i, prev_j] = pos_to_ij( draged_microsheme_pos );
-    let  prev_rotate = field_rotation[CURR_ID][draged_microsheme_pos];
-    
-    // dragged_microsheme_rotation <- ПОКА МЕГА ПРОТОТИПНО
-    let [     cover_x_quantity,      cover_y_quantity] = (dragged_microsheme_rotation % 2) ? [y_quantity, x_quantity] : [x_quantity, y_quantity];
-    let [prev_cover_x_quantity, prev_cover_y_quantity] = (              prev_rotate   % 2) ? [y_quantity, x_quantity] : [x_quantity, y_quantity];
-    
+    let [      x_quantity,       y_quantity] = [dragged_microsheme_x_quantity, dragged_microsheme_y_quantity]
+    let [cover_x_quantity, cover_y_quantity] = (dragged_microsheme_rotation % 2) ? [y_quantity, x_quantity] : [x_quantity, y_quantity];
 
     // примагничивание к сетке
     let [new_i, new_j] = magnetize_microsheme_to_grid(x, y, cover_x_quantity, cover_y_quantity);
-    let  handle_x_quantity = get_quantity(CURR_ID)[0];
+    let  handle_x_quantity = get_field_quantity(CURR_ID)[0];
     let  new_pos = new_i*handle_x_quantity + new_j;
 
-    
-    console.log('finish microsheme drag at cell: ', new_i, new_j);
+    let logging_msg = 'FINISH ' + (draged_microsheme_pos != -1 ? 'microsheme drag at' : 'copy microsheme to') + ' cell: ' + String(new_i) + ' ' + String(new_j);
 
-    let no_changing_field = 0;
-    if( new_i == -1 )                        no_changing_field = 1;
-    if( is_overlaping && !is_ctrl_pressed )  no_changing_field = 1;
-    
-    // Если позиция таже, то не надо переделывать field (А ЕСЛИ СМЕНИЛИ ПОВОРОТ НО ТЫКНУЛИ ТУДА ЖЕ?)
-    // по хорошему нужна проверка: dragged_microsheme_rotation != prev_rotation (но пока просто чтоб запустилось ыыы)
-    if( draged_microsheme_pos == new_pos && (dragged_microsheme_rotation == prev_rotate) ) no_changing_field = 1;
-    
-    if( no_changing_field ) {
-        console.log('not changing microsheme');
-        reset_microsheme_drag_settings();
-        redraw();  // а с redraw() костыльный raii не прошёл
+    let cancel = 0;
+    // [cancel]: невалидная финальная позиция
+    if( new_i == -1 ) cancel = 1;
+
+    // [cancel]: область вставки перекрывается
+    if( !is_ctrl_pressed && (is_dragging_microsheme_overlap_redstone || hovered_microshemes_poses.length) ) cancel = 1;
+
+    // [cancel]: поставили ПЕРЕТАСКИВАЕМУЮ микросхему туда же
+    let prev_rotation = draged_microsheme_pos != -1 ? field_rotation[CURR_ID][draged_microsheme_pos] : -1;
+    if( new_pos == draged_microsheme_pos && dragged_microsheme_rotation == prev_rotation ) cancel = 1;
+
+    // [cancel]: поставили СКОПИРОВАННУЮ (через колесико мышки) микросхему туда же
+    if( draged_microsheme_pos == -1 && !cancel ) {  // cancel == 0 - чтобы был корректный new_pos
+        let {type, rotation, extra_info} = get_block_info_at_pos(CURR_ID, new_pos);
+        if ( type == 6 && extra_info == draged_microsheme_id && rotation == dragged_microsheme_rotation ) cancel = 1;
+    }
+
+    if( cancel ) {
+        console.log(logging_msg, ' - NOT CHANGING microsheme');
+        // todo: ОЙ, реально надо по этим коснтрукциям пройтись: "draged_microsheme_pos != -1"
+        if( draged_microsheme_pos != -1 ) {  // - воо, вот это реально хак - максимально само-прострелочный
+            reset_microsheme_drag_settings();
+            redraw();
+        }
         return;
     }
     
-    
-    console.log('move microsheme (', prev_i, ' ',  prev_j, ')  ->  (', new_i, ' ', new_j, ')');
-
-    if( overlap_microsheme_poses.length ) {  // удаляем перекрытие микросхемы (лул, а к чему тут if ыыы)
-        for(let pos of overlap_microsheme_poses) {
-            // delete_microcheme(pos);
-            // КАК БУДТО ЛУЧШЕ БЫ: clear_microsheme()
-        }
+    // удаляем перекрытые микросхемы
+    for(let pos of hovered_microshemes_poses) {
+        clear_microsheme(CURR_ID, pos);
     }
 
-    // стираем исходное положение микросхемы и ставим в новое место
-    massive_clear_field(CURR_ID, prev_i, prev_j, prev_cover_x_quantity, prev_cover_y_quantity);
-    field_rotation[CURR_ID][draged_microsheme_pos] = 0;  // <- не обязательно - но чтобы поле при дебаге было красивым/чистым
-
-    place_microsheme   (CURR_ID,  new_i,  new_j, draged_microsheme_id, dragged_microsheme_rotation);
+    hovered_microshemes_poses = [new_pos];
+    is_dragging_microsheme_overlap_redstone = 0;
     
-    // стираем "приподнятый уровень" под новым местом микросхемы
+    // Если мы перетаскивали микросхему - то стираем исходное положение
+    if( draged_microsheme_pos != -1 ) {
+        let [prev_i, prev_j] = pos_to_ij( CURR_ID, draged_microsheme_pos );
+        logging_msg += ' [move microsheme from (' + String(prev_i) + ',' +  String(prev_j) + ')]';
+        let [prev_cover_x_quantity, prev_cover_y_quantity] = (prev_rotation%2) ? [y_quantity, x_quantity] : [x_quantity, y_quantity];
+        massive_clear_field(CURR_ID, prev_i, prev_j, prev_cover_x_quantity, prev_cover_y_quantity);
+    }
+    console.log(logging_msg, ' - REDRAWING');
+
+    place_microsheme(CURR_ID,  new_i,  new_j, draged_microsheme_id, dragged_microsheme_rotation);
+    
+    // стираем "приподнятый уровень" под новым местом микросхемы (потому что до сих пор это криво хранится в отдельном массиве...)
     massive_array_set(is_block_elevated[CURR_ID], 0, handle_x_quantity, new_i, new_j, cover_x_quantity, cover_y_quantity);
 
-    
-
-    reset_microsheme_drag_settings();
+    if( draged_microsheme_pos != -1 ) {
+        reset_microsheme_drag_settings();
+    } else {
+        // чтобы нарисовалось новое перекрытие draw_microsheme_drag_cover
+        redraw_under_cursor_obj();
+    }
     redraw();
 }
 
 
 let draged_microsheme_pos = -1;
+let draged_microsheme_id  = -1;  // <- нужна только для place_microheme в finish_microsheme_drag_at
 
 function reset_microsheme_drag_settings() {
+    console.log('!!! reseting microsheme');
     draged_microsheme_pos       = -1;
+    draged_microsheme_id        = -1;
     dragged_microsheme_rotation =  0;
 
     is_dragging_microsheme_overlap_redstone =   0;
@@ -893,8 +923,35 @@ function reset_microsheme_drag_settings() {
 let dragged_microsheme_rotation =  0;
 let dragged_microsheme_shift_to_left_up_corner = [0, 0];
 
-// используются, только при корректном draged_microsheme_pos
+// используются, только при "корректной микросхеме" (по идеи при: curr_showed_obj == 5)
 let dragged_microsheme_x_quantity = 0, dragged_microsheme_y_quantity = 0;
+let dragged_microsheme_in_scale   = 1;
+
+// КАПЕЦ, че это, не уж то я сейчас "класс" делаю, лол.... А как же что: всё можно без всяких этих лукасвтв сделать, а?
+function set_dragged_microsheme(handle_id, pos_of_corner, x_shift_to_corner, y_shift_to_corner) {
+    let rotation      = field_rotation  [handle_id][pos_of_corner];
+    let microsheme_id = field_extra_info[handle_id][pos_of_corner];
+    let [x_quantity, y_quantity] = get_paste_quantity(microsheme_id);
+    dragged_microsheme_in_scale  = get_in_scale      (microsheme_id);
+
+    draged_microsheme_pos       = pos_of_corner;
+    draged_microsheme_id        = microsheme_id;
+    dragged_microsheme_rotation = rotation;
+
+    dragged_microsheme_x_quantity = x_quantity;
+    dragged_microsheme_y_quantity = y_quantity;
+    
+    dragged_microsheme_shift_to_left_up_corner[0] = x_shift_to_corner;
+    dragged_microsheme_shift_to_left_up_corner[1] = y_shift_to_corner;
+
+    let [cover_x_quantity, cover_y_quantity] = ( rotation%2 ) ? [y_quantity, x_quantity] : [x_quantity, y_quantity];
+    
+    // [0, 3, 2, 1][rotation] - это типо обратный поворот
+    let [reverse_shift_x, reverse_shift_y] = get_microsheme_shift_corner(x_shift_to_corner, y_shift_to_corner, [0, 3, 2, 1][rotation], -cover_x_quantity*GRINDa, -cover_y_quantity*GRINDa);
+    curr_showed_obj_shift[0] = -reverse_shift_x;
+    curr_showed_obj_shift[1] = -reverse_shift_y;
+
+}
 
 // ТУТ x1, y1 - это "несдвинутый" (эталоный) угол, типо left_up угол микросхемы при rotation = 0 
 function get_microsheme_shift_corner(shift_to_x1, shift_to_y1, rotation, microsheme_w, microsheme_h) {
@@ -910,13 +967,13 @@ function get_microsheme_shift_corner(shift_to_x1, shift_to_y1, rotation, microsh
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 function is_correct_indx(i, j) {
-    let [microsheme_x_quantity, microsheme_y_quantity] = get_quantity(CURR_ID);
+    let [microsheme_x_quantity, microsheme_y_quantity] = get_field_quantity(CURR_ID);
     return 0 <= i && i < microsheme_y_quantity && 0 <= j && j < microsheme_x_quantity;
 }
 
 // с проверкой: если pos == -1 - то (i,j) вне поля
 function ij_to_pos(handle_id, i, j) {
-    let [microsheme_x_quantity, microsheme_y_quantity] = get_quantity(handle_id);
+    let [microsheme_x_quantity, microsheme_y_quantity] = get_field_quantity(handle_id);
     if( i < 0 || microsheme_y_quantity <= i || j < 0 || microsheme_x_quantity <= j ) return -1;
     return i * microsheme_x_quantity + j;
 }
@@ -947,7 +1004,7 @@ function get_microsheme_corner(handle_id, pos) {
 
 // i и j - должны быть КОРРЕКТНЫМИ!!!
 function get_block_info(handle_id, i, j) {
-    let handle_x_quantity = get_quantity(handle_id)[0];
+    let handle_x_quantity = get_field_quantity(handle_id)[0];
     let pos = i*handle_x_quantity + j;
     // let    get_pos_from = (...args) => args.map(a => a[i]);  // кринж? (чтобы везде не указывать индекс pos)
     // return get_pos_from(field_type, field_rotation, field_extra_info);
@@ -955,13 +1012,19 @@ function get_block_info(handle_id, i, j) {
     return {type: field_type[handle_id][pos], rotation: field_rotation[handle_id][pos], extra_info: field_extra_info[handle_id][pos]};
 }
 
+// мне чет страшно в этом js гуглить про перегрузку функций, ыыыы
+function get_block_info_at_pos(handle_id, pos) {
+    return {type: field_type[handle_id][pos], rotation: field_rotation[handle_id][pos], extra_info: field_extra_info[handle_id][pos]};
+}
+
+
 // возвращает [x, y] (ДА, это проклято, ведь принимаем в обратном порядке: i, j)
 function get_block_coords(i, j) {  // блен, такая маленькая функция.. надеюсь ещё блестнет при реализации вложенных микросхем
     return [GRINDx1 + GRINDa*j, GRINDy1 + GRINDa*i];
 }
 
-function pos_to_ij(pos) {
-    let [microsheme_x_quantity, microsheme_y_quantity] = get_quantity(CURR_ID);
+function pos_to_ij(handle_id, pos) {
+    let [microsheme_x_quantity, microsheme_y_quantity] = get_field_quantity(handle_id);
     return [Math.trunc(pos/microsheme_x_quantity), pos%microsheme_x_quantity];
 }
 
@@ -1083,7 +1146,7 @@ function massive_array_set(arr, value, i_step, i, j, x_quantity, y_quantity) {
 }
 
 function massive_clear_field(handle_id, i, j, x_quantity, y_quantity) {
-    let handle_x_quantity = get_quantity(handle_id)[0];
+    let handle_x_quantity = get_field_quantity(handle_id)[0];
     massive_array_set(field_type[handle_id], 0, handle_x_quantity, i, j, x_quantity, y_quantity);
 
     // не обязательно, но чтоб по красивее дебаг был:
@@ -1094,12 +1157,11 @@ function massive_clear_field(handle_id, i, j, x_quantity, y_quantity) {
 
 // не трогает массив is_block_elevated, если микросхема перетирает все блоки - то надо вызывать отдельно
 function place_microsheme(handle_id, i, j, microsheme_id, rotation = 0) {
-    let handle_x_quantity = get_quantity(handle_id)[0];
+    let handle_x_quantity = get_field_quantity(handle_id)[0];
     let pos = i*handle_x_quantity + j;
 
     // лол, прям бизнес код получается))))) (типо в функции вычисляется то, что было известно в месте вызова - и одно и тоже делается, мммм - зато реально приятнее писать, молимся на компиляторы!)
-    let [      x_quantity,       y_quantity] = get_quantity(microsheme_id);
-    let [cover_x_quantity, cover_y_quantity] = (rotation%2) ? [y_quantity, x_quantity] : [x_quantity, y_quantity];
+    let [cover_x_quantity, cover_y_quantity] = get_paste_quantity(microsheme_id, rotation);
 
     massive_array_set(field_type      [handle_id],   5, handle_x_quantity, i, j, cover_x_quantity, cover_y_quantity);
     massive_array_set(field_extra_info[handle_id], pos, handle_x_quantity, i, j, cover_x_quantity, cover_y_quantity);
@@ -1111,39 +1173,37 @@ function place_microsheme(handle_id, i, j, microsheme_id, rotation = 0) {
 
 
 // тут (i,j) - указывают на угол микросхемы! (type[pos] == 6)
-function clear_microsheme(handle_id, i, j) {
-    let handle_x_quantity = get_quantity(handle_id)[0];
-    let pos = i*handle_x_quantity + j;
-
+function clear_microsheme(handle_id, pos) {
     // ДАаа, а как же DRY? (прям такая же присказка как в place_microsheme)
-    let [      x_quantity,       y_quantity] = get_quantity(field_extra_info[handle_id][pos]);
-    let [cover_x_quantity, cover_y_quantity] = (field_rotation[handle_id][pos]%2) ? [y_quantity, x_quantity] : [x_quantity, y_quantity];
-
-    massive_array_set(field_type[handle_id],  0, handle_x_quantity, i, j, cover_x_quantity, cover_y_quantity);
+    let [cover_x_quantity, cover_y_quantity] = get_paste_quantity(field_extra_info[handle_id][pos], field_rotation[handle_id][pos]);
+    
+    let [i, j] = pos_to_ij(handle_id, pos);
+    massive_clear_field(handle_id, i, j, cover_x_quantity, cover_y_quantity);
 }
 
 // ТОЖ - зач нужна эта фунция? Пусть лучше вызыватель сам будет делать create_new_microsheme и place_microsheme
-function create_and_place_microsheme(i, j, x_quantity, y_quantity) {
-    let microsheme_id = create_new_microsheme(x_quantity, y_quantity);
-    place_microsheme(i, j, x_quantity, y_quantity, microsheme_id);
-    return microsheme_id;
-}
+// function create_and_place_microsheme(i, j, x_quantity, y_quantity) {
+//     let microsheme_id = create_new_microsheme(x_quantity, y_quantity);
+//     place_microsheme(i, j, x_quantity, y_quantity, microsheme_id);
+//     return microsheme_id;
+// }
 
 // получение indx_in_list по какому-то куску (i, j) микросхемы: indx_in_list = get_block_info(i, j).extra_info;
 // АЙ, ПОКА НИГДЕ НЕ ИСПОЛЬЗУЕТСЯ ТОЛЬКОМ
-function delete_microcheme(microshem_id) {
-    let [microsheme_i1, microsheme_j1] = pos_to_ij( internal_microsheme_poses[ internal_microsheme_list[microshem_id] ] );
-    let [x_quantity, y_quantity] = get_quantity( microshem_id );
-    delete_microsheme( microshem_id );
-    massive_clear_field(microsheme_i1, microsheme_j1, x_quantity, y_quantity);
-}
+// function delete_microcheme(microshem_id) {
+//     // let [microsheme_i1, microsheme_j1] = pos_to_ij( internal_microsheme_poses[ internal_microsheme_list[microshem_id] ] );
+//     // let [x_quantity, y_quantity] = get_paste_quantity( microshem_id );
+//     // delete_microsheme( microshem_id );
+//     // massive_clear_field(microsheme_i1, microsheme_j1, x_quantity, y_quantity);
+// }
 
 
 let one_exsist_microsheme_i  = 1, one_exsist_microsheme_j = 1;
 let one_exsist_microsheme_x_quantity = 3;
 let one_exsist_microsheme_y_quantity = 2;
+let one_exsist_microsheme_scale = 3;
 
-let one_exsist_microsheme_id = create_new_microsheme(one_exsist_microsheme_x_quantity, one_exsist_microsheme_y_quantity);
+let one_exsist_microsheme_id = create_new_microsheme(one_exsist_microsheme_x_quantity, one_exsist_microsheme_y_quantity, one_exsist_microsheme_scale);
 place_microsheme(CURR_ID, one_exsist_microsheme_i, one_exsist_microsheme_j, one_exsist_microsheme_id);
 
 
@@ -1154,7 +1214,7 @@ place_microsheme(CURR_ID, one_exsist_microsheme_i, one_exsist_microsheme_j, one_
 
 // !!! для определения блоков используется только функция:  is_layered
 function recalc_borders() {
-    let [microsheme_x_quantity, microsheme_y_quantity] = get_quantity(CURR_ID);
+    let [microsheme_x_quantity, microsheme_y_quantity] = get_field_quantity(CURR_ID);
     let field_is_visited = new Uint8Array(microsheme_x_quantity*microsheme_y_quantity);
     let all_circuits = [];
 
@@ -1399,19 +1459,17 @@ function draw_grind(x1, y1, a, x_quantity, y_quantity) {
             }
 
 
-            console.log("draw microsheme at: ", i, j);
+            // console.log("draw microsheme at: ", i, j);
             let [x1, y1] = get_block_coords(i, j);
 
+            let [microsheme_x_quantity, microsheme_y_quantity] = get_paste_quantity(microshem_id);
             
-            let [microsheme_x_quantity, microsheme_y_quantity] = get_quantity(microshem_id);
-            
-
-            let [cover_x_quantity, cover_y_quantity] = ( rotation%2 ) ? [microsheme_y_quantity, microsheme_x_quantity] : [microsheme_x_quantity, microsheme_y_quantity];
+            let [cover_x_quantity, cover_y_quantity] = ( rotation%2 ) ? [microsheme_y_quantity, microsheme_x_quantity] : [microsheme_x_quantity, microsheme_y_quantity];            
             ctx.clearRect(x1, y1, cover_x_quantity*GRINDa, cover_y_quantity*GRINDa);
-
+            
             ctx_rotate_and_reper(ctx, rotation, x1, y1);
             let [verxtex_shift_x, verxtex_shift_y] = [(rotation == 2 || rotation == 1) ? -microsheme_x_quantity*GRINDa : 0, (rotation == 3 || rotation == 2) ? -microsheme_y_quantity*GRINDa : 0];
-            draw_microsheme(ctx, verxtex_shift_x, verxtex_shift_y, one_exsist_microsheme_scale, microshem_id);
+            draw_microsheme(ctx, verxtex_shift_x, verxtex_shift_y, get_in_scale(microshem_id), microshem_id);
             ctx_rotate_and_reper(ctx, 0);
         }
 
@@ -1480,7 +1538,7 @@ function which_covered(handle_id, x, y, calc_overlap = 0) {  // allow_cancelatio
     let result_i = i, result_j = j;
     if( !is_correct_indx(i, j) ) {
         // АЙ, короче, просто заифаю когда мы кликаем за "оболочкой" поля
-        let [microsheme_x_quantity, microsheme_y_quantity] = get_quantity(CURR_ID);
+        let [microsheme_x_quantity, microsheme_y_quantity] = get_field_quantity(CURR_ID);
         if( i < -1 || j < -1 || i > microsheme_y_quantity || j > microsheme_x_quantity) return [-1, -1, -1];
 
         // (i, j) - на "оболочке": Если i неккоректный, то он либо i == -1, либо i == y_quantity. Аналогично j.
@@ -1670,7 +1728,7 @@ function redraw_under_cursor_obj(which = curr_showed_obj) {
         //        above_ctx.drawImage(icon_to_draw, mouse_x - a/2, mouse_y - b/2);
         //        ctx_rotate(above_ctx, 0);
         ctx_rotate_and_reper(above_ctx, dragged_microsheme_rotation, mouse_x, mouse_y);
-        draw_microsheme     (above_ctx, curr_showed_obj_shift[0], curr_showed_obj_shift[1], one_exsist_microsheme_scale);
+        draw_microsheme     (above_ctx, curr_showed_obj_shift[0], curr_showed_obj_shift[1], dragged_microsheme_in_scale);
         ctx_rotate_and_reper(above_ctx, 0);
         return;
     }
@@ -1782,16 +1840,20 @@ let is_LBM_block_confiscate = 0;
 function LBM_click_on(x, y) {
     let [j, i] = which_covered(CURR_ID, x, y, curr_showed_obj <= 0);
 
-    if( i == -1 ) { is_LBM_first_click = 0; return; }
+    // ммм, техника костыльного raii
+    let is_first_click = is_LBM_first_click;
+    is_LBM_first_click = 0;
+
+    if( i == -1 ) return;
     
     // Не заменяем уже поставленные блоки
-    // Однако если в руке воздух то всегда заменяем (типо удаляем)
-    if( (curr_showed_obj != 0) && !is_LBM_first_click && get_block_info(CURR_ID, i, j).type ) return;
+    // Однако если в руке ВОЗДУХ или МИКРОСХЕМА то всегда заменяем (типо удаляем)
+    if( (curr_showed_obj != 0 && curr_showed_obj != 5) && !is_first_click && get_block_info(CURR_ID, i, j).type ) return;
     
     if( curr_showed_obj == -1 ) {  // размещение блока
         // чтобы не было что мы в одной ячейке забрали блок и, чуть сместив мышку, обратно его поставили
         // мы вообще полностью запретим расстановку с зажатым кликом в этом случае
-        if( is_LBM_first_click && is_layered(i, j) ) {
+        if( is_first_click && is_layered(i, j) ) {
             is_LBM_block_confiscate = 1;
             replace_block(i, j);
         }
@@ -1799,11 +1861,20 @@ function LBM_click_on(x, y) {
         // после первого клика можем только наращивать (поднимать) уровень
         if( !is_LBM_block_confiscate && !is_layered(i, j) ) replace_block(i, j);
     }
-    is_LBM_first_click = 0;
 
     // конечно для пыли и воздуха мы тут тоже записываем поворот (чего не должно быть) - ну да ладно, какая разница пока это нигде не используется
     if( 0 <= curr_showed_obj && curr_showed_obj <= 4 ) {
         place_redstone(i, j, curr_showed_obj, possible_rotation[curr_rotation], curr_showed_obj_extra_info);
+    }
+
+    // кликаем, держа в руках микросхему 
+    if( curr_showed_obj == 5 && draged_microsheme_pos == -1 ) {
+        // и при этом НЕ ПЕРЕТАСКИВАЕМАЯ - то есть: draged_microsheme_pos == -1
+        if( draged_microsheme_pos == -1 ) {
+            finish_microsheme_drag_at(x - dragged_microsheme_shift_to_left_up_corner[0], y - dragged_microsheme_shift_to_left_up_corner[1]);
+        }
+
+        return;
     }
 
     // по сути это нужно только если у нас в руках блок - но ладно уж, пускай всегда вызывается
@@ -1828,7 +1899,7 @@ let cnt_of_redraws = 0;
 function redraw() {
     // ctx.clearRect(0, 0, my_canvas.width, my_canvas.height);  - а нафига это тут? (оставил для исторической справки)
     console.log('[' + String(cnt_of_redraws++) + ']===================================');    
-    let [microsheme_x_quantity, microsheme_y_quantity] = get_quantity(CURR_ID);
+    let [microsheme_x_quantity, microsheme_y_quantity] = get_field_quantity(CURR_ID);
     draw_grind(GRINDx1, GRINDy1, GRINDa, microsheme_x_quantity, microsheme_y_quantity);
 }
 
@@ -1886,54 +1957,24 @@ function RBM_click_on(x, y) {
 
     let [j, i, overlap_type] = which_covered(CURR_ID, x, y, 1);
 
+    // ВАРИАНТ 1. ПОКА ПОД КУРСОРОМ МИКРОСХЕМА - НЕ СМОЖЕМ НАЧАТЬ ПЕРЕТАСКИВАТЬ ДРУГУЮ МИКРОСХЕМУ
+    // if( curr_showed_obj == 5 ) return;
+
+    // ВАРИАНТ 2. 
     if( draged_microsheme_pos != -1 ) return;
 
     if( this_first_moment && overlap_type >= 2 ) {  // это перетаскивание микросхемы
-        // НАДО БЫ УМЕТЬ ЗАМЕНЯТЬ ТЕКУЩУЮ ОТОБРАЖАЕМУЮ ИКОНКУ НА МИКРОСХЕМУ
-        // И ПОСЛЕ ПЕРЕТАСКИВАНИЯ МИКРОСХЕМЫ ВОЗВРАЩАТЬ ПРОШЛУЮ ИКОНКУ
-        // !!! пока косячно:
-        // - ЧЁ ПРОСТО плюс ЕЩЁ ОДНУ ПЕРЕМЕННУЮ? draged_microsheme_list_indx???
-        // curr_framed_obj
-        // curr_showed_obj
+        // НАДО БЫ УМЕТЬ ЗАМЕНЯТЬ ТЕКУЩУЮ ОТОБРАЖАЕМУЮ ИКОНКУ НА МИКРОСХЕМУ И ПОСЛЕ ПЕРЕТАСКИВАНИЯ МИКРОСХЕМЫ ВОЗВРАЩАТЬ ПРОШЛУЮ ИКОНКУ
+        // ОТДЕЛЬНО ХРАНИМ: (сначала казалось "косячным" подгоном, но при реализации понял, что вроде неплохо) 
+        //     + curr_framed_obj
+        //     + curr_showed_obj
 
-        curr_showed_obj             = 5;
+        curr_showed_obj = 5;
 
-        draged_microsheme_pos       = overlap_type - 2;
-        dragged_microsheme_rotation = field_rotation  [CURR_ID][draged_microsheme_pos];
+        let pos_of_corner = overlap_type - 2;        
+        let [microsheme_x1, microsheme_y1] = get_block_coords( ...pos_to_ij(CURR_ID, pos_of_corner) );
+        set_dragged_microsheme(CURR_ID, pos_of_corner, x - microsheme_x1, y - microsheme_y1);
 
-        let rotation = dragged_microsheme_rotation;
-        
-        
-        let [x_quantity, y_quantity] = get_quantity( field_extra_info[CURR_ID][draged_microsheme_pos] );
-        dragged_microsheme_x_quantity = x_quantity;
-        dragged_microsheme_y_quantity = y_quantity;
-        
-        
-        let [cover_x_quantity, cover_y_quantity] = ( rotation%2 ) ? [dragged_microsheme_y_quantity, dragged_microsheme_x_quantity] : [dragged_microsheme_x_quantity, dragged_microsheme_y_quantity];
-        
-        
-        let [microsheme_x1, microsheme_y1] = get_block_coords( ...pos_to_ij(draged_microsheme_pos) );
-        dragged_microsheme_shift_to_left_up_corner[0] = -microsheme_x1 + x;
-        dragged_microsheme_shift_to_left_up_corner[1] = -microsheme_y1 + y;
-
-
-
-        
-        // ДОЛЖНО БУДЕМ БРАТЬ microsheme_rotation ИЗ ПОЛЯ
-        // let [verxtex_shift_x, verxtex_shift_y] = [ [0, 0], [0, y_quantity], [x_quantity, y_quantity], [x_quantity, 0] ][rotation];
-        // curr_showed_obj_shift[0] = -dragged_microsheme_shift_to_left_up_corner[0] + verxtex_shift_x*GRINDa;  // учёт: microsheme_rotation
-        // curr_showed_obj_shift[1] = -dragged_microsheme_shift_to_left_up_corner[1] + verxtex_shift_y*GRINDa;
-
-        // [0, 3, 2, 1][rotation] - это типо обратный поворот
-        let [reverse_shift_x, reverse_shift_y] = get_microsheme_shift_corner(dragged_microsheme_shift_to_left_up_corner[0], dragged_microsheme_shift_to_left_up_corner[1], [0, 3, 2, 1][rotation], -cover_x_quantity*GRINDa, -cover_y_quantity*GRINDa);
-        curr_showed_obj_shift[0] = -reverse_shift_x;
-        curr_showed_obj_shift[1] = -reverse_shift_y;
-
-        // console.log('shift from corner to (x1, y1): ', verxtex_shift_x, verxtex_shift_y);
-        
-        // console.log('curr_showed_obj_shift: ', curr_showed_obj_shift);
-
-        
         redraw_under_cursor_obj();
         // НУЖНО "УДАЛИТЬ" С ПОЛЯ МИКРОСХЕМУ == ПЕРЕРИСОВАТь ЕГО
         redraw();
@@ -1960,18 +2001,27 @@ function RBM_click_on(x, y) {
 }
 
 
-let mouse_whell_click = [-1, -1];
-function copy_to_hand_from(i, j) {
-    let {type, rotation, extra_info} = get_block_info(CURR_ID, i, j);
+// !!! [click_i, click_j, click_type_overlap] - если при 'up' type_overlap тоже на тойже микросхеме - то не важны i, j
+let mouse_whell_click_info = [-1, -1, -1];
+
+// todo: балин как бесит, что у меня то (i,j), то (pos) используется в функциях, тут например никакого смысла в (i,j) нет! - лучше бы был (pos)
+// по идеи: всё что связано с мышкой - имеет "природу" (i,j)
+
+
+function copy_to_hand_from(handle_id, pos) {
+    let {type, rotation, extra_info} = get_block_info_at_pos(handle_id, pos);
 
     if( type == 0 ) {
-        if( is_layered(i, j) ) {
+        // мдаа, а тут без get-ера пользуюсь
+        if( is_block_elevated[handle_id][pos] ) {
             change_showed_obj_to(-1);
         }
         return;
     }
 
-    // не очень круто, что внутри change_showed_obj_to тоже вызывается redraw_under_cursor_obj
+    // не очень круто, что внутри change_showed_obj_to тоже вызывается redraw_under_cursor_obj (НО ПОКА НЕ ГОРИТ - т.к. это только при клики средним колесиком мышки вызывается)
+    // Там в change_showed_obj_to (ВРОДЕ) есть "состояния", поэтому нельзя изменить curr_rotation и curr_showed_obj_extra_info, а затем вызвать change_showed_obj_to
+    //  -> было бы удобно, если change_showed_obj_to мог принимать эти доп параметры для отображаемого type
     change_showed_obj_to(type);
 
 
@@ -1991,6 +2041,33 @@ function copy_to_hand_from(i, j) {
         console.log('+(change extra_info)');
         redraw_under_cursor_obj();
     }
+}
+
+// ну ладно, че уж пихать всё в одну функцию copy_to_hand_from
+function copy_microsheme_to_hand_from(handle_id, pos) {
+    console.log('copy microsheme at:', pos);
+
+    if( draged_microsheme_pos != -1 ) {  // мы отменяем перетаскивание микросхемы - и должны "вернуть" её на поле (т.е. перерисовать поле)
+        // было круто, если бы redraw() сам вызывался когда draged_microsheme_pos из корректно становиться равным -1
+        // - БАЛИН, точно, в c++ (я только его более менее знаю) можно было бы сделать класс с перегрузкой оператора '=' !!!!
+        draged_microsheme_pos  = -1;
+        redraw();
+    }
+
+    // в принципе всё - можно отказываться от гетеров! Вроде вполне хорошая структура и можно чисто на прямую обращаться
+    let microshem_id = field_extra_info[handle_id][pos];
+    let rotation     = field_rotation  [handle_id][pos];
+
+    let [cover_x_quantity, cover_y_quantity] = get_paste_quantity(microshem_id, rotation);
+    curr_showed_obj = 5;
+    // change_showed_obj_to(5);
+    
+    // "устанавливаем состояние предмета":
+    set_dragged_microsheme(handle_id, pos, cover_x_quantity*GRINDa / 2, cover_y_quantity*GRINDa / 2);
+    draged_microsheme_pos = -1;  // ультра хак
+    // а хотя было бы поприятнее если бы изначально функция не устанавливала draged_microsheme_pos, и надо было самому писать: draged_microsheme_pos = pos, в случае перетаскивания микросхемы. Но что поделаешь, изначально я поназывал все переменные draged_microsheme_<name> и ладно, пуская так. Лишь бы коммит рабочий был, не хочу переделывать. Пока что.
+
+    redraw_under_cursor_obj();   // - НАДО БЫ всё таки отделить redraw_under_cursor_obj от change_showed_obj_to
 }
 
 
@@ -2020,20 +2097,38 @@ document.addEventListener('mouseup', (event) => {
     if( event.button == 2 ) {  // ПКМ
         finish_RBM_press();
 
-        // КОНЕЦ перетаскивания микросхемы инвентаря
-        if( curr_showed_obj == 5 ) {
+        // КОНЕЦ перетаскивания микросхемы
+        if( draged_microsheme_pos != -1 ) {
             let microsheme_x1 = mouse_x - dragged_microsheme_shift_to_left_up_corner[0], microsheme_y1 = mouse_y - dragged_microsheme_shift_to_left_up_corner[1];
             finish_microsheme_drag_at(microsheme_x1, microsheme_y1);
+            // reset_microsheme_drag_settings(); - эта логика находится в finish_microsheme_drag_at
             change_showed_obj_to(curr_framed_obj);
+
+            is_LBM_pressed = 0;
         }
     }
 
     if( event.button == 1 ) {  // нажали на колесико мышки
-        let [j, i] = which_covered(CURR_ID, mouse_x, mouse_y, 1);
-        if( i != -1 && mouse_whell_click[0] == i && mouse_whell_click[1] == j ) {  // коректный клик колесиком мышки
-            copy_to_hand_from(i, j);
+        // костыльный raii (прям понравилось его пихать ^^)
+        let [prev_j, prev_i, prev_overlap_type] = mouse_whell_click_info;
+        mouse_whell_click_info = [-1, -1, -1];
+
+        let [j, i, overlap_type] = which_covered(CURR_ID, mouse_x, mouse_y, 1);
+
+        // коректный клик колесиком мышки по МИКРОСХЕМЕ
+        if( overlap_type >= 2 && overlap_type == prev_overlap_type ) {
+            copy_microsheme_to_hand_from(CURR_ID, overlap_type-2);
+            return;
         }
-        mouse_whell_click = [-1, -1];
+
+        // коректный клик колесиком мышки по ЯЧЕЙКЕ
+        if( i != -1 && i == prev_i && j == prev_j ) {
+            let pos = ij_to_pos(CURR_ID, i, j);
+            if( is_microsheme_type(field_type[CURR_ID][pos]) ) return;  // микросхему можно скопировать только кликом по рамке
+            // а тут не надо делать redraw() в случае если до этого перетаскивалась микросхема, т.к. он сам вызовется в change_showed_obj_to (которые есть в copy_to_hand_from)
+            copy_to_hand_from(CURR_ID, pos);
+            return;
+        }
     }
 });
 
@@ -2043,8 +2138,7 @@ document.addEventListener('mousedown', (event) => {
 
 
     if( event.button == 1 ) {  // нажали на колесико мышки
-        let [j, i] = which_covered(CURR_ID, mouse_x, mouse_y, 1);
-        mouse_whell_click = [i, j];
+        mouse_whell_click_info = which_covered(CURR_ID, mouse_x, mouse_y, 1);
         event.preventDefault();
     }
 
@@ -2065,7 +2159,7 @@ document.addEventListener('mousedown', (event) => {
     // в случае перетаскивании микросхемы не переходим в состояние: is_LBM_pressed
     // ОДНАКО: что если мы сначала сделаи 'keydown' ЛКМ, затем мы начили перетаскивать микросхему ПКМ, затем закончили перетаскивание микросхемы - то у нас останется активное состояние is_LBM_pressed
     // и чзхз? как такое поведение интерпретировать - как ожидаемое? или лучше как мы начинаем перетаскивать микросхему - то сразу сбрасывать состояние is_LBM_pressed?
-    if( event.button == 0 && curr_showed_obj != 5 ) {  // ставим блок
+    if( event.button == 0 && draged_microsheme_pos != 5 ) {  // ставим блок
         // первый клик ЛКМ
         is_LBM_first_click = 1;
         is_LBM_pressed     = 1;
@@ -2081,16 +2175,6 @@ document.addEventListener('mousedown', (event) => {
 
         RBM_click_on(x, y);
     }
-
-    // else {  // ставим редстоун
-    //     if( nx != -1 ) {
-    //         replace_dust(ny, nx);
-    //     }
-    // }
-
-    // ctx.clearRect(0, 0, my_canvas.width, my_canvas.height);
-    // console.log('===================================');
-    // draw_grind(GRINDx1, GRINDy1, GRINDa, GRINDx_quantity, GRINDy_quantity);
 });
 
 
@@ -2265,6 +2349,7 @@ function redraw_inventory(which) {
 
 
 // меняем только на редстоун компонент (передаётся корректный which)
+// пока эта функция "неэффективно" отрабатывает в copy_to_hand_from - ВРОДЕ если вызывать redraw_under_cursor_obj() вручную, а не в этой функции то всё пофиксится! (и при этом оставить в этой функции redraw_inventory)
 function change_showed_obj_to(which) {
     //MIKU_EDIT:    
     // КРИВЕНЬКО (что finish_RBM при смене перетаскивания микросхемы на редстоун): мы можем начать перетаскивать микросхему только зажав ПКМ, если во время этого процесса мы сменили предмет то должны завершить перетаскивание микросхемы и вместе с тем и "зажатие" ПКМ
@@ -2275,10 +2360,12 @@ function change_showed_obj_to(which) {
         // ЕСЛИ во время перетаскивания микросхемы нажали escape (т.е. сменили на объект air) - то возвращаем предыдущий показываемый редстоун компонент
         if( which == 0 ) which = curr_framed_obj;  // БЛИН, нет бы, не связывать escape и KEY_air.....
         
-        if( draged_microsheme_pos != -1 ) {  // 
+        // если мы именно перетаскивали микросхему (например мы к этому вызову могли вызвать finis_microsheme_drag или мы вообще скопировали микросхему (средним колесиком мышки))
+        let need_update_field = ( draged_microsheme_pos != -1 );
+        // if( draged_microsheme_pos != -1 ) {
             reset_microsheme_drag_settings();
-            redraw();
-        }
+        // }
+        if( need_update_field ) redraw();
     }
 
     let logging_msg = 'select object:' + get_obj_name(which);
@@ -2343,7 +2430,11 @@ document.addEventListener('keydown', (event) => {
     }
 
     if( c === 'Control' ) {
+        // console.log('Control down!');
         is_ctrl_pressed = 1;
+
+        if( is_LBM_pressed ) LBM_click_on(mouse_x, mouse_y);
+
         // в случае перетаскивании микросхемы
         if( curr_showed_obj == 5 ) redraw_under_cursor_obj();
         return;
@@ -2504,7 +2595,7 @@ function animation_load_circle(curr_timestamp) {  // curr_timestamp - перед
     above_ctx.clearRect(0, 0, WW, HH);
 
     //MIKU_EDIT: ЭТО КАЖЕТСЯ АД (типо при перетаскивании иконки инвентаря мы можем ещё начать перетаскивать микросхему)
-    if( draged_microsheme_pos != -1 ) redraw_under_cursor_obj();
+    if( curr_showed_obj == 5 ) redraw_under_cursor_obj();
 
     let need_redraw_inventory = 0;
 
@@ -2623,7 +2714,7 @@ function set_key(which_obj, new_key) {
 }   
 
 function get_obj_name(which_obj) {
-    return ["KEY_block", "KEY_air", "KEY_redstone", "KEY_torch", "KEY_repeater", "KEY_lever"][which_obj+1];
+    return ["KEY_block", "KEY_air", "KEY_redstone", "KEY_torch", "KEY_repeater", "KEY_lever", 'microsheme'][which_obj+1];
 }
 
 
@@ -2713,7 +2804,7 @@ background_img.onload = tryInit;
 
 
 function init() {
-    let [microsheme_x_quantity, microsheme_y_quantity] = get_quantity(CURR_ID);
+    let [microsheme_x_quantity, microsheme_y_quantity] = get_field_quantity(CURR_ID);
     draw_grind(GRINDx1, GRINDy1, GRINDa, microsheme_x_quantity, microsheme_y_quantity);
     redraw_inventory(curr_framed_obj);
 }
