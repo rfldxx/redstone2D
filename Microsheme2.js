@@ -32,6 +32,7 @@ function new_number() { return new_number_inner_variable++; }
 
 // !!! рисуем СЕТКУ с отсупом 0.5 так как на canvas есть тупое, не отключаемое "сглаживание"
 let dS = 0.5;
+// TODO: перечекать что на canvas соблюдается это смещение dS 
 
 const TILE_RESOLUION = 50;
 
@@ -54,7 +55,7 @@ class Microsheme {
     static TypeLink            = new_number();
 
     InnerMicroshemesIndx    = [];
-    // TODO: InnerMicroshemesContour = []; 
+    // TODO (или всё таки вообще не нужно?): InnerMicroshemesContour = []; 
 
     Xquantity = 0;
     Yquantity = 0;
@@ -68,6 +69,7 @@ class Microsheme {
 
 
     // РИСОВАНИЕ
+    // ----------------------------------------------------------------------------------------------------------------
     static draw_grid(draw_ctx, x1, y1, x_quantity, y_quantity, a, line_width = 1) {
         let x2 = x1 + a*x_quantity, y2 = y1 + a*y_quantity
 
@@ -211,9 +213,13 @@ class Microsheme {
         if( del_somehow(this.InnerMicroshemesIndx, list_indx) ) {  // при удалении последний элемент swap-нулся
             this.FieldInfo1[this.InnerMicroshemesIndx[list_indx]] = list_indx; 
         }
-        
+
+
+        // !!! TODO: апхваххпхвхахвхап - ЗАККОМЕНТИРОВАЛ ЭТО ПО ПРИКОЛУ
         let [i, j] = this.indx_to_ij(indx);
-        this.Ctx.clearRect(j*TILE_RESOLUION, i*TILE_RESOLUION, x_size*TILE_RESOLUION, y_size*TILE_RESOLUION);
+        // this.Ctx.clearRect(j*TILE_RESOLUION, i*TILE_RESOLUION, x_size*TILE_RESOLUION, y_size*TILE_RESOLUION);
+
+
         console.log('InnerMicroshemesIndx: ', this.InnerMicroshemesIndx);
     }
 
@@ -228,420 +234,9 @@ class Microsheme {
     }
 
 
-    // later: сделать для рамок
 
-    recalc_border_areals_inner_microsheme1(indx) {
-        let contour = [];
-
-        let [i1, j1] = this.indx_to_ij(indx);
-        let microsheme_id = this.FieldInfo[indx];
-        let x_size = MicroshemeArray[microsheme_id].Xsize, y_size = MicroshemeArray[microsheme_id].Ysize;
-
-        // ДАа, а какже как же DRY?... (типо в повороте холста наверное что-то подобное - наверное можно было и его использовать если бы строился только один контур) - ну ладно, лишь бы это сделать
-        function side_rotation(which_side, A1, A2, B1, B2, a, b) {
-            return [ [A1 + a, B1 - b], [A2 + b, B1 + a], [A2 - a, B2 + b], [A1 - b, B2 - a] ][which_side];
-        }
-
-        function which_corner(which_side, level, alignment) {
-            // чисто математичсеки так вышло (сначал написал портянку if-ов, затем подгонял (ведь что? ведь должно красиво/симметрично получиться))
-            return side_rotation(which_side, 0, 3, 0, 3, alignment, level - 3);
-        }
-
-        // border_shift - сдвиг по стороне, level_shift - сдвиг перепендикулярно стороне
-        function line_to(which_side, border_shift, level_shift, alignment_shift) {
-            // alignment_shift == 0 - на       "левой" cтороне
-            // alignment_shift == 1 - ближе к  "левой" стороне
-            // alignment_shift == 2 - ближе к "правой" стороне
-            // alignment_shift == 3 - на      "правой" стороне (<- излишне, так как это "alignment_shift == 0" у "border_shift+1")
-            
-            let [absolute_j, absolute_i] = side_rotation(which_side, j1, j1+x_size-1, i1, i1+y_size-1, border_shift, 1);
-            contour.push( [absolute_i, absolute_j, which_corner(which_side, level_shift, alignment_shift)] );
-        }
-
-        
-        // влияет ли на рамку микросхемы клетка (i,j)  - было бы прикольно тут буфер ответов на ~3-4 последних запроса иметь (хотя мб и двух хватит!)
-        const impact = (which_side, border_shift, level_shift) => {
-            let [absolute_j, absolute_i] = side_rotation(which_side, j1, j1+x_size-1, i1, i1+y_size-1, border_shift, level_shift);
-            if( !this.is_in_indx(absolute_i, absolute_j) ) return 0;
-
-            let field_type = this.FieldType[this.ij_to_indx(absolute_i, absolute_j)];
-            return (field_type == Microsheme.TypeInnerMicrosheme) || (field_type == Microsheme.TypeLink);
-        }
-        
-         
-        let level = 0;  // <- ВНЕШНЯЯ переменная для ф-ии process_side
-        
-        {   //  НАЧАЛЬНАЯ ТОЧКА контура
-            let border_shift = 0, alignment = 0;
-            if( !impact(0, -1, +1) ) {
-                if( !impact(0,  0, +1) )   level = 1;
-                if( !impact(0, -1,  0) ) { border_shift = -1; alignment = 2; }
-            }
-            line_to(0, border_shift, level, alignment);
-        }
-        
-
-        // let corner_cell = f();
-        // function process_side() {
-        //     // begin point  = F(corner_cell)
-        //     // edge  points = ...
-            
-        //     // new_corner_cell = 
-        //     // last point   = F(new_corner_cell)
-        //     // corner_cell  = new_corner_cell
-        // }
-
-
-        function process_side(which_side, cover_quantity) {
-            for(let dj = 0; dj < cover_quantity; dj++) {
-                let new_level = !impact(which_side, dj, +1);
-                if( new_level == level) continue;
-                level = new_level;
-                
-                if( new_level == 1 ) {
-                    console.log('up', contour.length);
-                    line_to(which_side, dj, 0, 0);
-                    line_to(which_side, dj, 1, 1);
-                } else {
-                    console.log('down', contour.length);
-                    line_to(which_side, dj-1, 1, 2);
-                    line_to(which_side, dj  , 0, 0);
-                }
-            }
-
-            let obstacle_on_corner =  impact( which_side     , cover_quantity, +1);
-            let next_level         = !impact((which_side+1)%4,              0, +1);
-
-            if( level && obstacle_on_corner ) {  // диагональное ребро (уф, захардкодил это, не смог "линейно" разрулить сразу все случаи)
-                line_to( which_side     , cover_quantity-1,          1,          2);  // в этом if-е выполнено: level = 1
-                line_to((which_side+1)%4,                0, next_level, next_level);  // забавно что нумерация aligment совпала с next_level
-            } else {
-                if( obstacle_on_corner ) next_level = 0;
-                line_to(which_side, cover_quantity, level, next_level);
-            }
-            level = next_level;
-        }
-
-        process_side(0, x_size);
-        process_side(1, y_size);
-        process_side(2, x_size);
-        process_side(3, y_size);
-        
-
-        // начальная точка отмечена и в конце контура
-        return contour;
-    }
-
-    // два режима:
-    //   * полный пересчёт контура, создаёися  новый      контур
-    //   * пересчёт  одной стороны, изменяется переданный контур
-    recalc_border_areals_inner_microsheme2(indx, recalc_side = null, contour = null) {
-        if( recalc_side == null ) contour = [ [], [], [], [] ];
-
-        let [i1, j1] = this.indx_to_ij(indx);
-        let microsheme_id = this.FieldInfo[indx];
-        let x_size = MicroshemeArray[microsheme_id].Xsize, y_size = MicroshemeArray[microsheme_id].Ysize;
-
-        // ДАа, а какже как же DRY?... (типо в повороте холста наверное что-то подобное - наверное можно было и его использовать если бы строился только один контур) - ну ладно, лишь бы это сделать
-        function side_rotation(which_side, A1, A2, B1, B2, a, b) {
-            return [ [A1 + a, B1 - b], [A2 + b, B1 + a], [A2 - a, B2 + b], [A1 - b, B2 - a] ][which_side];
-        }
-
-        function which_corner(which_side, level, alignment) {
-            // чисто математичсеки так вышло (сначал написал портянку if-ов, затем подгонял (ведь что? ведь должно красиво/симметрично получиться))
-            return side_rotation(which_side, 0, 3, 0, 3, alignment, level - 3);
-        }
-
-        // border_shift - сдвиг по стороне, level_shift - сдвиг перепендикулярно стороне
-        function line_to(which_side, border_shift, level_shift, alignment_shift) {
-            // alignment_shift == 0 - на       "левой" cтороне
-            // alignment_shift == 1 - ближе к  "левой" стороне
-            // alignment_shift == 2 - ближе к "правой" стороне
-            // alignment_shift == 3 - на      "правой" стороне (<- излишне, так как это "alignment_shift == 0" у "border_shift+1")
-            
-            let [absolute_j, absolute_i] = side_rotation(which_side, j1, j1+x_size-1, i1, i1+y_size-1, border_shift, 1);
-            contour.push( [absolute_i, absolute_j, which_corner(which_side, level_shift, alignment_shift)] );
-        }
-
-        
-        // влияет ли на рамку микросхемы клетка (i,j)  - было бы прикольно тут буфер ответов на ~3-4 последних запроса иметь (хотя мб и двух хватит!)
-        const impact = (which_side, border_shift, level_shift) => {
-            let [absolute_j, absolute_i] = side_rotation(which_side, j1, j1+x_size-1, i1, i1+y_size-1, border_shift, level_shift);
-            if( !this.is_in_indx(absolute_i, absolute_j) ) return 0;
-
-            let field_type = this.FieldType[this.ij_to_indx(absolute_i, absolute_j)];
-            return (field_type == Microsheme.TypeInnerMicrosheme) || (field_type == Microsheme.TypeLink);
-        }
-        
-
-        // ВНЕШНИЕ переменные для ф-ии process_side:
-        let obstacle_on_corner =  impact(0, -1, +1);
-        let prev_level         = !impact(0, -1,  0);
-
-        function process_side(which_side, cover_quantity) {
-            // НАЧАЛЬНАЯ ТОЧКА стороны
-            let  corner_level             = (!obstacle_on_corner || prev_level) && !impact(which_side, 0, +1);
-            let [border_shift, alignment] = (!obstacle_on_corner && prev_level) ? [-1, 2] : [0, corner_level];
-            prev_level = corner_level;
-
-            line_to(which_side, border_shift, corner_level, alignment);
-
-
-            for(let dj = 0; dj < cover_quantity; dj++) {
-                let curr_level = !impact(which_side, dj, +1);
-                if( curr_level == prev_level) continue;
-                prev_level = curr_level;
-                
-                if( curr_level == 1 ) {
-                    console.log('up', contour.length);
-                    line_to(which_side, dj, 0, 0);
-                    line_to(which_side, dj, 1, 1);
-                } else {
-                    console.log('down', contour.length);
-                    line_to(which_side, dj-1, 1, 2);
-                    line_to(which_side, dj  , 0, 0);
-                }
-            }
-
-            obstacle_on_corner = impact(which_side, cover_quantity, +1);
-            
-            if( prev_level && obstacle_on_corner ) {  // диагональное ребро (уф, захардкодил это (p.s. раньше тут было больше if-ов), не смог "линейно" разрулить сразу все случаи)
-                line_to(which_side, cover_quantity-1, 1, 2);  // в этом if-е выполнено: prev_level = 1
-            }
-        }
-
-        if( recalc_side == null ) {
-            process_side(recalc_side, [x_size, y_size][recalc_side%2]);
-        } else {
-            process_side(0, x_size);
-            process_side(1, y_size);
-            process_side(2, x_size);
-            process_side(3, y_size);
-        }
-
-        // начальная точка отмечена и в конце контура
-        return contour;
-    }
-
-    // ес чо мы считаем контур, чтобы не приходилось на каждом шаге проходить периметр микросхемы
-    recalc_border_areals_inner_microsheme3(indx, recalc_side = null, contour = null, crop_contour = null, crop_contour_dl = null, crop_contour_t = null) {
-        if( recalc_side == null ) contour = [ [], [], [], [] ];
-        else                      contour[recalc_side] = [];
-
-        let [i1, j1] = this.indx_to_ij(indx);
-        let microsheme_id = this.FieldInfo[indx];
-        let x_size = MicroshemeArray[microsheme_id].Xsize, y_size = MicroshemeArray[microsheme_id].Ysize;
-
-        // ДАа, а какже как же DRY?... (типо в повороте холста наверное что-то подобное - наверное можно было и его использовать если бы строился только один контур) - ну ладно, лишь бы это сделать
-        function side_rotation(which_side, A1, A2, B1, B2, a, b) {
-            return [ [A1 + a, B1 - b], [A2 + b, B1 + a], [A2 - a, B2 + b], [A1 - b, B2 - a] ][which_side];
-        }
-
-
-        // влияет ли на рамку микросхемы клетка (i,j)  - было бы прикольно тут буфер ответов на ~3-4 последних запроса иметь (хотя мб и двух хватит!)
-        const impact = (which_side, border_shift, level_shift) => {
-            let [absolute_j, absolute_i] = side_rotation(which_side, j1, j1+x_size-1, i1, i1+y_size-1, border_shift, level_shift);
-            if( this.is_in_indx(absolute_i, absolute_j) ) {        
-                let field_type = this.FieldType[this.ij_to_indx(absolute_i, absolute_j)];
-                return (field_type == Microsheme.TypeInnerMicrosheme) || (field_type == Microsheme.TypeLink);
-            }
-
-            if( recalc_side == null ) return 0;
-
-            // за ифаем, да и ладно
-
-            let i_out = (absolute_i < 0) ? -1 : (absolute_i >= this.Yquantity);
-            let j_out = (absolute_j < 0) ? -1 : (absolute_j >= this.Xquantity);
-            
-            // это угол
-            if( i_out && j_out ) {
-                return !crop_contour[( (i_out == -1 ? j_out : 4-j_out) + 1 )/2][0];
-            }
-
-            // это на стороне... которая кстати должна быть равна recalc_side!
-            let l = [absolute_j, absolute_i, this.Xquantity-1-absolute_j, this.Yquantity-1-absolute_i][recalc_side] / this.Scale;
-            
-            // блен, такое тоже может быть, если две микросхемы стоят рядом, то их угловый "impact-ы" будут перемешаны
-            if( crop_contour_dl > l ) {
-                crop_contour_t--;
-                crop_contour_dl -= crop_contour[which_side][crop_contour_t];
-            }
-            
-            // TODO: тут багнуто - по идеи должен работать while(1), но чет не раьотает
-            while( crop_contour_t < crop_contour[which_side].length ) {
-                let cnt = crop_contour[which_side][crop_contour_t];
-                if( crop_contour_dl + cnt > l ) break;
-                crop_contour_dl += cnt;
-                crop_contour_t++;
-            }
-
-            return !( crop_contour[which_side][1] ^ (crop_contour_t%2) );
-        }
-        
-
-        // Ёккк, как будто проще было 4 for-а по каждой стороне сделать и всё..
-        function process_side(which_side, cover_quantity) {
-            // угол
-            contour[which_side].push( !impact(which_side, -1, +1) );
-
-            // начало стороны
-            let level = !impact(which_side, 0, +1);
-            contour[which_side].push( level );
-            if( cover_quantity < 1 ) return;  // хыхы, тип чтобы и при нулевых размерах коректно отрисовывалось
-
-            // сторона
-            let cnt = 1;
-            for(let dj = 1; dj < cover_quantity; dj++, cnt++) {
-                if( level == !impact(which_side, dj, +1) ) continue;
-                level = !level;
-                contour[which_side].push( cnt );
-                cnt = 0;
-            }
-            contour[which_side].push( cnt );
-        }
-
-        if( recalc_side == null ) {
-            process_side(0, x_size);
-            process_side(1, y_size);
-            process_side(2, x_size);
-            process_side(3, y_size);
-            return contour;
-        } else {
-            process_side(recalc_side, [x_size, y_size][recalc_side%2]);
-            // TODO: надо всё такии отделить сторону от угла, хотя это улучшение только на O(1), но хотя бы не такой тошнотный код будет
-            // следующий угол (дада, это может ВПУСТУЮ подсчитаться, вотэто ужас)
-            contour[(recalc_side+1)%4][0] = !impact((recalc_side+1)%4, -1, +1);
-
-            // ай пофиг на такой ужас))))) жесть.... покончить бы с этим поскореее, вообще боль делать
-            return [crop_contour_dl, crop_contour_t];
-        }
-    }
-
-
-
-
-    static recurse_draw_contour1(draw_ctx, shift_x, shift_y, microsheme_array, id = 0, accumulated_scale = 1, crop_contour = null) {
-        accumulated_scale *= microsheme_array[id].Scale;
-        let A = TILE_RESOLUION / accumulated_scale;
-
-        let line_width = (accumulated_scale <= 3) ? 1 : (accumulated_scale <= 8) ? 0.8 : 0.25;
-        
-
-        // CROP-аем контуру с учётом вложености (и прочее умное слова текст - че?)
-
-        // TODO: НАДО ЧТОБЫ этот список НЕ ПЕРЕСЧИТЫВАЛСЯ, а хранился в самой микросхеме - а то никакого смысла в этих "сжатых" контурах нет
-        let beyonded_part_inner_microshemes = [ [], [], [], [] ];
-        for(let I = microsheme_array[id].Yquantity, J = microsheme_array[id].Xquantity, side = 0, j = 0; j < J; j++) {
-            let indx =  MicroshemeArray[id].ij_to_indx(0, j);
-            let type =  MicroshemeArray[id].FieldType[indx];
-            if( type == Microsheme.TypeLink ) { indx = MicroshemeArray[id].FieldInfo[indx]; type = MicroshemeArray[id].FieldType[indx]; }
-            if( type == Microsheme.TypeInnerMicrosheme ) {
-                // апхехпехпхех - пох х пох
-                let prev_inner_microsheme = beyonded_part_inner_microshemes[side].length ? beyonded_part_inner_microshemes[side][beyonded_part_inner_microshemes[side].length-1] : -1;
-                if( indx != prev_inner_microsheme ) beyonded_part_inner_microshemes[side].push(indx);
-            }
-        }
-        for(let I = microsheme_array[id].Yquantity, J = microsheme_array[id].Xquantity, side = 1, i = 0; i < I; i++) {
-            let indx =  MicroshemeArray[id].ij_to_indx(i, J-1);
-            let type =  MicroshemeArray[id].FieldType[indx];
-            if( type == Microsheme.TypeLink ) { indx = MicroshemeArray[id].FieldInfo[indx]; type = MicroshemeArray[id].FieldType[indx]; }
-            if( type == Microsheme.TypeInnerMicrosheme ) {
-                let prev_inner_microsheme = beyonded_part_inner_microshemes[side].length ? beyonded_part_inner_microshemes[side][beyonded_part_inner_microshemes[side].length-1] : -1;
-                if( indx != prev_inner_microsheme ) beyonded_part_inner_microshemes[side].push(indx);
-            }
-        }
-        for(let I = microsheme_array[id].Yquantity, J = microsheme_array[id].Xquantity, side = 2, j = J-1; j >= 0; j--) {
-            let indx =  MicroshemeArray[id].ij_to_indx(I-1, j);
-            let type =  MicroshemeArray[id].FieldType[indx];
-            if( type == Microsheme.TypeLink ) { indx = MicroshemeArray[id].FieldInfo[indx]; type = MicroshemeArray[id].FieldType[indx]; }
-            if( type == Microsheme.TypeInnerMicrosheme ) {
-                let prev_inner_microsheme = beyonded_part_inner_microshemes[side].length ? beyonded_part_inner_microshemes[side][beyonded_part_inner_microshemes[side].length-1] : -1;
-                if( indx != prev_inner_microsheme ) beyonded_part_inner_microshemes[side].push(indx);
-            }
-        }
-        for(let I = microsheme_array[id].Yquantity, J = microsheme_array[id].Xquantity, side = 3, i = I-1; i >= 0; i--) {
-            let indx =  MicroshemeArray[id].ij_to_indx(i, 0);
-            let type =  MicroshemeArray[id].FieldType[indx];
-            if( type == Microsheme.TypeLink ) { indx = MicroshemeArray[id].FieldInfo[indx]; type = MicroshemeArray[id].FieldType[indx]; }
-            if( type == Microsheme.TypeInnerMicrosheme ) {
-                let prev_inner_microsheme = beyonded_part_inner_microshemes[side].length ? beyonded_part_inner_microshemes[side][beyonded_part_inner_microshemes[side].length-1] : -1;
-                if( indx != prev_inner_microsheme ) beyonded_part_inner_microshemes[side].push(indx);
-            }
-        }
-
-        if( id == 0 ) console.log('beyonded_part_inner_microshemes:', beyonded_part_inner_microshemes);
-
-        if( crop_contour != null ) {
-            for(let side = 0; side < 4; side++) {
-                let [crop_contour_dl, crop_contour_t] = [0, 2];
-                for(let indx of beyonded_part_inner_microshemes[side]) {
-                    let list_indx = MicroshemeArray[id].FieldInfo1[indx];
-                    let contour   = MicroshemeArray[id].InnerMicroshemesContour[list_indx];
-                    let prev_contour = structuredClone(contour);
-                    [crop_contour_dl, crop_contour_t] = MicroshemeArray[id].recalc_border_areals_inner_microsheme(indx, side, contour, crop_contour, crop_contour_dl, crop_contour_t);
-                    
-
-                    // углы не меняем???
-                    // contour[side][0] = 1;
-                    // contour[(side+1)%4][0] = 1;
-
-                    // // углы не меняем??? - а не, углы совпадающие с углами родительской микросхемы меняем
-                    // let [i1, j1] = MicroshemeArray[id].indx_to_ij(indx);
-                    // let i2 = i1 + MicroshemeArray[ MicroshemeArray[id].FieldInfo[indx] ].Ysize, j2 = j1 + MicroshemeArray[ MicroshemeArray[id].FieldInfo[indx] ].Xsize;
-                    // if( i1 == 0                             && j1 == 0                             ) contour[0][0] = crop_contour[0][0];
-                    // if( i1 == 0                             && j2 == MicroshemeArray[id].Xquantity ) contour[1][0] = crop_contour[1][0];
-                    // if( i2 == MicroshemeArray[id].Yquantity && j2 == MicroshemeArray[id].Xquantity ) contour[2][0] = crop_contour[2][0];
-                    // if( i2 == MicroshemeArray[id].Yquantity && j1 == 0                             ) contour[3][0] = crop_contour[3][0];
-
-                    console.log(indx, " : ", prev_contour, ' -> ', contour);
-                }
-            } 
-        }
-        
-
-
-        // for(let contour of MicroshemeArray[id].InnerMicroshemesContour) {
-        for(let t = 0; t < MicroshemeArray[id].InnerMicroshemesIndx.length; t++) {
-            let contour  = MicroshemeArray[id].InnerMicroshemesContour[t];
-
-            let inner_indx = MicroshemeArray[id].InnerMicroshemesIndx[t];
-            let inner_id   = MicroshemeArray[id].FieldInfo[inner_indx];
-            let x_size = MicroshemeArray[inner_id].Xsize, y_size = MicroshemeArray[inner_id].Ysize;
-            let [i, j] = MicroshemeArray[id].indx_to_ij(inner_indx);
-
-            MicroshemeArray[id].draw_contour(draw_ctx, contour, shift_x + j*A, shift_y + i*A, A, x_size, y_size, line_width);
-            Microsheme. recurse_draw_contour1(draw_ctx, shift_x + j*A, shift_y + i*A, microsheme_array, microsheme_array[id].FieldInfo[inner_indx], accumulated_scale, contour);
-        }
-
-
-        // отмненям CROP контуров краевых микросхем
-        if( crop_contour != null ) {
-            for(let side = 0; side < 4; side++) {
-                for(let indx of beyonded_part_inner_microshemes[side]) {
-                    let inner_x_size = MicroshemeArray[MicroshemeArray[id].FieldInfo[indx]].Xsize, inner_y_size = MicroshemeArray[MicroshemeArray[id].FieldInfo[indx]].Ysize;
-                    let list_indx = MicroshemeArray[id].FieldInfo1[indx];
-                    let contour   = MicroshemeArray[id].InnerMicroshemesContour[list_indx];
-                    
-                    contour[side] = [1, 1, [inner_x_size, inner_y_size][side%2]];
-                    
-                    contour[(side+1)%4][0] = 1;  // соседний угол
-                }
-            }
-        }
-
-    }
-
-
-
-    
-    recalc_border_areals() {
-        // for(let t = 0; t < this.InnerMicroshemesIndx.length; t++) {
-        //     this.InnerMicroshemesContour[t] = this.recalc_border_areals_inner_microsheme(this.InnerMicroshemesIndx[t]);
-        // }
-    }
-
-
-    // КОНТУРЫ МИКРОСХЕМ
+    // КОНТУРЫ МИКРОСХЕМ (на этом прям долг/проклятие висит - )
+    // ----------------------------------------------------------------------------------------------------------------
     static create_corner_dots_array() {
         // [#] id угла вычисляется как: 16*A + 4*B + C
         //      B  |   C
@@ -722,10 +317,11 @@ class Microsheme {
     // в CLEAN версии, просто сразу написать значения массива corner_dots
     static corner_dots = Microsheme.create_corner_dots_array();
 
-    // draw_contour(100, 100, 50, [37, 2, 42, 42], [[3,2],[2],[1,1,1,1,1],[2]]);
     static contour_colors = ['red', '#3cb44b', '#4363d8', '#f58231', '#911eb4'];
-    draw_contour(x1, y1, a, sides, corners, draw_ctx, clr='red') {
-        let H = 0.3*a;  // отступ
+    // СТИЛЬНО ВЫГЛЯДИТ КОГДА: inner_offset = 0
+    static draw_contour(x1, y1, a, sides, corners, draw_ctx, inner_offset, inner_scale, inner_canvas, clr='red', skip_drawing_contour = 0) {
+        let H       = 0.2*a;  // отступ
+        let inner_H = inner_offset*H;
 
         let x_size = 0, y_size = 0;
         for(let d of sides[0]) x_size += d;
@@ -739,7 +335,7 @@ class Microsheme {
         // border_shift - сдвиг по стороне, level_shift - сдвиг перепендикулярно стороне (паралельный/перпендикулярный сдвиги - там вроде специальное название для них есть по типу в "тройка векторов")
         let first_line_to = 1;
         function line_to(which_side, border_shift, level_shift) {
-            let [x, y] = side_rotation(which_side, x1, x1+(x_size-0)*a, y1, y1+(y_size-0)*a, border_shift, level_shift);
+            let [x, y] = side_rotation(which_side, x1, x1 + x_size*a, y1, y1 + y_size*a, border_shift, level_shift);
 
             if( first_line_to ) draw_ctx.moveTo(x, y);
             else                draw_ctx.lineTo(x, y);
@@ -778,15 +374,35 @@ class Microsheme {
             }
         }
 
+        // -----------------------------
+        // НЕ НАРАВ: рисуем микросхему (ВНЕЗАПНО!)
+        draw_ctx.clearRect(x1, y1, a*x_size, a*y_size);
+        // TODO: НУ КОНЕЧНО КОГДА КАРТИНКА СРАЗУ РИСЕУТСЯ НА ХОЛСТЕ ПОЛУЧАЕТСЯ КАЧЕСТВЕНЕЕ (а не при рисовании сначала на холсте микросхемы и потом при перерисовании на основной холст)
+        draw_ctx.drawImage(inner_canvas, x1, y1, a*x_size, a*y_size);  // <- TODO: сейчас по сути не нужны всякие microsheme.Canvas который аккумулирует в себе рисунки своих потомков :(
+        Microsheme.draw_grid(draw_ctx, x1, y1, inner_scale*x_size, inner_scale*y_size, a/inner_scale, draw_ctx.lineWidth);
+
+        if( skip_drawing_contour ) return;
+        // -----------------------------
+
+
+        // контур внешней границы
         draw_ctx.beginPath();
         process_side(0);
         process_side(1);
         process_side(2);
         process_side(3);
+        draw_ctx.closePath();
+
+        // контур внутреней границы
+        draw_ctx.rect(x1+inner_H, y1+inner_H, a*x_size - 2*inner_H, a*y_size - 2*inner_H);
+
+        
+        draw_ctx.fillStyle = 'lightgray';
+        draw_ctx.fill('evenodd');
+
         let w = draw_ctx.lineWidth; 
         draw_ctx.lineWidth   = 2*w;
         draw_ctx.strokeStyle = clr;
-        draw_ctx.closePath();
         draw_ctx.stroke();
         draw_ctx.lineWidth = w;
     }
@@ -829,6 +445,7 @@ class Microsheme {
         // пофиг на хардкожено
         let dij = [ [0, +1], [+1, 0], [0, -1], [-1, 0] ];  // а хотя, давайте это вынесем
 
+        // НЕ НРАВ: как будто можно было тоже draw_contour.side_rotation применить для индексов
         sides[0] = recalc_side(i1-1       , j1         ,  dij[0],  x_size);
         sides[1] = recalc_side(i1         , j1+x_size  ,  dij[1],  y_size);
         sides[2] = recalc_side(i1+y_size  , j1+x_size-1,  dij[2],  x_size);
@@ -877,14 +494,22 @@ class Microsheme {
         return [croped_side, pre_i, start_i, post_i, i, start_pos];
     }
     
-
-    recurse_draw_contour(x1, y1, a, parent_sides, parent_corners, draw_ctx, depth = 0, accumulated_scale = 1) {
-        a /= this.Scale;
-        
+    // ЭТО УЖЕ ПОЛУЧАЕТСЯ recurse_draw_MICROSHEME
+    // МБ сделать эту функцию static?
+    // accumulated_scale    - для толщины линий
+    // skip_drawing_contour - чтобы у корневой микросхемы не рисовалась рамка
+    recurse_draw_contour(x1, y1, a, parent_sides, parent_corners, draw_ctx, depth = -1, accumulated_scale = 1, skip_drawing_contour = 1) {
+        // настройка толщины линий
         accumulated_scale *= this.Scale;
-        let line_width = (accumulated_scale <= 3) ? 1 : (accumulated_scale <= 8) ? 0.8 : 0.25;
+        let line_width = (accumulated_scale <= 4) ? 1 : (accumulated_scale <= 8) ? 0.8 : 0.25;
         draw_ctx.lineWidth = line_width;
         
+        // по сути рисуем микросхему
+        Microsheme.draw_contour(x1, y1, a, parent_sides, parent_corners, draw_ctx, 1/this.Scale, this.Scale, this.Canvas, Microsheme.contour_colors[depth%Microsheme.contour_colors.length], skip_drawing_contour);
+        
+        a /= this.Scale;
+
+
         // просто каждый раз пересчитываем calc_contour для всех внутренних микросхем . . .
         let InnerMicroshemesContour = [];
         for(let indx of this.InnerMicroshemesIndx) {
@@ -955,39 +580,17 @@ class Microsheme {
         call_corner(this.Yquantity-1, 0               , 3);
 
 
-
+        // вызываемся на потомках
         for(let iter = 0; iter < this.InnerMicroshemesIndx.length; iter++) {
             let indx =        this.InnerMicroshemesIndx   [iter];
             let [sides, corners] = InnerMicroshemesContour[iter];
             
             let [i, j] = this.indx_to_ij(indx);
-            let x = x1 + j*a, y = y1 + i*a;
-            this.draw_contour(x, y, a, sides, corners, draw_ctx, Microsheme.contour_colors[depth%Microsheme.contour_colors.length]);
-            
-            let id = this.FieldInfo[indx];
-            MicroshemeArray[id].recurse_draw_contour(x, y, a, sides, corners, draw_ctx, depth+1);
+            let id     = this.FieldInfo [indx];
+            MicroshemeArray[id].recurse_draw_contour(x1 + j*a, y1 + i*a, a, sides, corners, draw_ctx, depth+1, accumulated_scale, 0);
         }
     }
 
-    recurse_draw_contour1(x1, y1, a, draw_ctx, depth = 0, accumulated_scale = 1) {
-        a /= this.Scale;
-
-        accumulated_scale *= this.Scale;
-        let line_width = (accumulated_scale <= 3) ? 1 : (accumulated_scale <= 8) ? 0.8 : 0.25;
-        draw_ctx.lineWidth = line_width;
-
-        // просто каждый раз пересчитываем calc_contour для всех внутренних микросхем . . .
-        for(let indx of this.InnerMicroshemesIndx) {
-            let [sides, corners] = this.calc_contour(indx);
-            
-            let [i, j] = this.indx_to_ij(indx);
-            let x = x1 + j*a, y = y1 + i*a;
-            this.draw_contour(x, y, a, sides, corners, draw_ctx, Microsheme.contour_colors[depth%Microsheme.contour_colors.length]);
-            
-            let id = this.FieldInfo[indx];
-            MicroshemeArray[id].recurse_draw_contour1(x, y, a, draw_ctx, depth+1);
-        }
-    }
 };
 
 
@@ -999,11 +602,19 @@ let X0 = 30.5, Y0 = 30.5;
 
 let MicroshemeArray = [new Microsheme(14, 9)];
 
-function clear_layer1()         { layer1.getContext('2d').clearRect(0, 0, layer1.width, layer1.height); }
+function clear_canvas(cnvs) { cnvs.getContext('2d').clearRect(0, 0, cnvs.width, cnvs.height); }
+
+// РЯЛ, рисуем границы микросхем на отдельном canvas!
+let layer_for_contours = new OffscreenCanvas(layer1.width, layer1.height);
 function draw_root_microsheme() {
+    // !!!! БАЛИН, СЕЙЧАС БУДЕТ: "отпечатываем" рисунок каждой микросхемы реккурсивно -> А не, РЯЛ, рисуем границы микросхем на отдельном canvas!
     layer1.getContext('2d').drawImage(MicroshemeArray[0].Canvas, X0, Y0);
-    Microsheme.recurse_draw_grid   (layer1.getContext('2d'), X0, Y0, MicroshemeArray);
-    MicroshemeArray[0].recurse_draw_contour(X0, Y0, TILE_RESOLUION, [[MicroshemeArray[0].Xsize], [MicroshemeArray[0].Ysize], [MicroshemeArray[0].Xsize], [MicroshemeArray[0].Ysize]], [42, 42, 42, 42] /* апхпх */, layer1.getContext('2d'));
+    // Microsheme.recurse_draw_grid   (layer1.getContext('2d'), X0, Y0, MicroshemeArray);
+
+    // Microsheme.draw_grid(layer1.getContext('2d'), X0, Y0, MicroshemeArray[0].Xquantity, MicroshemeArray[0].Yquantity, TILE_RESOLUION);
+    clear_canvas(layer_for_contours);
+    MicroshemeArray[0].recurse_draw_contour(X0, Y0, TILE_RESOLUION, [[MicroshemeArray[0].Xsize], [MicroshemeArray[0].Ysize], [MicroshemeArray[0].Xsize], [MicroshemeArray[0].Ysize]], [42, 42, 42, 42] /* апхпх */, layer_for_contours.getContext('2d'));
+    layer1.getContext('2d').drawImage(layer_for_contours, 0, 0);
 }
 
 
@@ -1311,7 +922,7 @@ class CursorPoint {
             if( !MicroshemeArray[this.CURR_id].is_in_indx(this.CURR_i, this.CURR_j) || (this.IsSomethingCovered && !this.IsCntrlPressed) ) return;
 
             if( this.delete_covered_microshemes() ) {
-                MicroshemeArray[this.CURR_id].recalc_border_areals();
+                // на память что можно так сделать (тип вдруг потом лень будет посмотреть на возвращаемое значение delete_covered_microshemes)
             }
 
             MicroshemeArray[this.CURR_id].add_image(this.CURR_i, this.CURR_j);
@@ -1329,7 +940,6 @@ class CursorPoint {
             MicroshemeArray.push( new Microsheme(this.CurrInfo[0], this.CurrInfo[1], this.CurrInfo[2]) );
 
             MicroshemeArray[this.CURR_id].add_inner_microsheme(this.CURR_i, this.CURR_j, MicroshemeArray, MicroshemeArray.length-1);
-            MicroshemeArray[this.CURR_id].recalc_border_areals();
 
             this.redraw_layer1();
             console.log('add: ', this.CURR_id, this.CURR_i, this.CURR_j, MicroshemeArray.length-1);
@@ -1346,7 +956,7 @@ class CursorPoint {
             MicroshemeArray[id].draw_inner_microsheme(i, j, MicroshemeArray, inner_id);
         }
 
-        clear_layer1();
+        clear_canvas(layer1);
         draw_root_microsheme();
 
         this.Scale = -1;
