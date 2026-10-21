@@ -46,6 +46,8 @@ function del_somehow(arr, i) {
     return 1;
 }
 
+
+
 class Microsheme {
     FieldInfo; FieldInfo1;
     FieldType;
@@ -130,26 +132,87 @@ class Microsheme {
     ij_to_indx(i, j) { return i*this.Xquantity + j; }
     indx_to_ij(indx) { return [Math.floor(indx/this.Xquantity), indx%this.Xquantity]; }
 
+    
+    static HALO_OFFSET    = 0.2;  // на какую часть клетки выступает рамка микросхем
+
     // тут бы хранить path!
     static at(x, y, shift_x, shift_y, microsheme_array, id = 0, accumulated_scale = 1) {
+        // Что если мы находимся на рамке микросхемы - будем переходить внутрь (тут захардкожен определённый вид рамки)
+        
+        // возвращает две ближащие грани (числа из {4, 0, 1, 2, 3}),  4 - значит что нет прикрепляемых блоков
+        // limit_distance - должно быть меньше A
+        function near_side(cell_dx1, cell_dy1, A, limit_distance) {
+            let cell_dx2 = A - cell_dx1, cell_dy2 = A - cell_dy1;
+            // (в этом комменте уже никакого смылса нет, но пусть будет как историческое "графити"): оххх, слово "restricted" - асоциируется только с restricted Hartry-Fock
+            const distances = [[cell_dx2, 0], [cell_dy1, 1], [cell_dx1, 2], [cell_dy2, 3], [limit_distance, 4], [limit_distance, 4]]; // <- имбово с добавлением элемента [limit_distance, 4]
+            // какой кринж, js не может нормально сортировать.....
+            distances.sort( (a, b) => (a[0] - b[0]) || (a[1] - b[1]) );  // аналог сортировки pair из c++
+            return [ distances[0][1], distances[1][1] ];
+        }
+
+
+        // [ИДЕЙНЫЙ ПРИКОЛ]: локально легко определять принадлежит ли точка рамке, но находить "сразу" весь контур было тошнотно.
+        function get_indx_accounted_microsheme_halo(groundMicrosheme, i, j, x, y, A, indx0) {
+            const is_microsheme_tile = (indx) => {  // требуется корректный indx
+                let     field_type =  groundMicrosheme.FieldType[indx];
+                return (field_type == Microsheme.TypeInnerMicrosheme) || (field_type == Microsheme.TypeLink)
+            }
+
+            if( indx0 != -1 && is_microsheme_tile(indx0) ) return indx0;
+
+            // проверяем наличие рамок микросхем от соседей
+            let [suggest1, suggest2] = near_side(x - j*A, y - i*A, A, Microsheme.HALO_OFFSET*A);
+            let dxy = [ [+1, 0], [0, -1], [-1, 0], [0, +1], [0, 0] ];
+
+            let updated_indx;  // <- !!! функция impact меняет эту переменную
+            const impact = (ii, jj) => {
+                if( !groundMicrosheme.is_in_indx(ii, jj) ) return 0;
+                return is_microsheme_tile( updated_indx = groundMicrosheme.ij_to_indx(ii, jj) );
+            }
+
+            // АХАХАХ, лол конвеер: (потомушто impact "меняет внешнюю переменную")
+            let    halo_impact   = (suggest1 != 4) &&  impact(i + dxy[suggest1][1], j + dxy[suggest1][0]);
+                   halo_impact ||= (suggest2 != 4) && (impact(i + dxy[suggest2][1], j + dxy[suggest2][0]) ||  impact(i + dxy[suggest1][1] + dxy[suggest2][1], j + dxy[suggest1][0] + dxy[suggest2][0]));
+            return halo_impact ? updated_indx : indx0;
+        }
+
+
         let path = [];  // <- чебы не вынести её в одну глобальную переменную PATH
         while( 1 ) {
-            let j = Math.floor( accumulated_scale*(x-shift_x) / TILE_RESOLUION );
-            let i = Math.floor( accumulated_scale*(y-shift_y) / TILE_RESOLUION );
+            let currGroundMicrosheme = microsheme_array[id];
             
-            let currMicrosheme = microsheme_array[id];
-            let indx = currMicrosheme.ij_to_indx(i, j);
-            let type = currMicrosheme.FieldType[indx];
+            let inner_x = x - shift_x, inner_y = y - shift_y;
 
-            if( type  == Microsheme.TypeLink ) {
-                indx   = currMicrosheme.FieldInfo[indx];
-                [i, j] = currMicrosheme.indx_to_ij(indx);
-            }
-            else if( type != Microsheme.TypeInnerMicrosheme ) return [shift_x, shift_y, accumulated_scale, id, path];
+            let j = Math.floor( accumulated_scale*inner_x / TILE_RESOLUION );
+            let i = Math.floor( accumulated_scale*inner_y / TILE_RESOLUION );
+            
+
+            // [МУСОР]: эхх, эпичный нейминг, но придется от него избавиться
+            // let [halo_impact, halo_indx] = is_microsheme_halo(x, y);
+            // let indx = halo_impact ? halo_indx : currGroundMicrosheme.ij_to_indx(i, j);
+
+
+            // на первой итерации могут передаться такие (x,y) - что (i,j) будут не коректными!
+            // И НЕ ТОЛЬКО НА ПЕРВОЙ!!! - ПОТОМ ТОЖЕ ТАКОЕ МОЖЕТ БЫТЬ (но там i,j максим на единицу за пределами поля)
+            let indx0 = currGroundMicrosheme.is_in_indx(i, j) ? currGroundMicrosheme.ij_to_indx(i, j) : -1;
+
+            // внимание: полученый здесь indx, может быть сдвинут от (i,j)
+            let indx = get_indx_accounted_microsheme_halo(currGroundMicrosheme, i, j, inner_x, inner_y, TILE_RESOLUION/accumulated_scale, indx0);
+            
+            // Типо если (i,j) не корректные -> то indx0 = -1 -> если нет рамки на месте (x,y) то: indx = indx0 = -1
+            // Если это произошло на первой      итерации  то:  возвращаем id = -1 мы не находимся в области root-микросхемы
+            // Если это произошло на последующих итерациях то:  всё ок - мы находимся на рамке микросхемы -> возвращаем id
+            if( indx == -1 ) return [shift_x, shift_y, accumulated_scale, id == 0 ? -1 : id, path];
+
+            if( currGroundMicrosheme.FieldType[indx] == Microsheme.TypeLink            ) indx = currGroundMicrosheme.FieldInfo[indx];
+            if( currGroundMicrosheme.FieldType[indx] != Microsheme.TypeInnerMicrosheme ) return [shift_x, shift_y, accumulated_scale, id, path];
+
+
+            [i, j] = currGroundMicrosheme.indx_to_ij(indx);
             
             // переходим к вложенной микросхеме (i, j - указывают на положение вложеной микросхемы)
-            path.push( [id, i, j, currMicrosheme.FieldInfo[indx]] )
-            id = currMicrosheme.FieldInfo[indx];
+            path.push( [id, i, j, currGroundMicrosheme.FieldInfo[indx]] )
+            id = currGroundMicrosheme.FieldInfo[indx];
 
             shift_x += j*TILE_RESOLUION / accumulated_scale;
             shift_y += i*TILE_RESOLUION / accumulated_scale;
@@ -320,7 +383,7 @@ class Microsheme {
     static contour_colors = ['red', '#3cb44b', '#4363d8', '#f58231', '#911eb4'];
     // СТИЛЬНО ВЫГЛЯДИТ КОГДА: inner_offset = 0
     static draw_contour(x1, y1, a, sides, corners, draw_ctx, inner_offset, inner_scale, inner_canvas, clr='red', skip_drawing_contour = 0) {
-        let H       = 0.2*a;  // отступ
+        let H       = Microsheme.HALO_OFFSET*a;  // отступ
         let inner_H = inner_offset*H;
 
         let x_size = 0, y_size = 0;
@@ -378,7 +441,8 @@ class Microsheme {
         // НЕ НАРАВ: рисуем микросхему (ВНЕЗАПНО!)
         draw_ctx.clearRect(x1, y1, a*x_size, a*y_size);
         // TODO: НУ КОНЕЧНО КОГДА КАРТИНКА СРАЗУ РИСЕУТСЯ НА ХОЛСТЕ ПОЛУЧАЕТСЯ КАЧЕСТВЕНЕЕ (а не при рисовании сначала на холсте микросхемы и потом при перерисовании на основной холст)
-        draw_ctx.drawImage(inner_canvas, x1, y1, a*x_size, a*y_size);  // <- TODO: сейчас по сути не нужны всякие microsheme.Canvas который аккумулирует в себе рисунки своих потомков :(
+        
+        // СРОЧНОЕ TODO [link1]: расскоментировать обратно эту строчку:  draw_ctx.drawImage(inner_canvas, x1, y1, a*x_size, a*y_size);  // <- TODO: сейчас по сути не нужны всякие microsheme.Canvas который аккумулирует в себе рисунки своих потомков :(
         Microsheme.draw_grid(draw_ctx, x1, y1, inner_scale*x_size, inner_scale*y_size, a/inner_scale, draw_ctx.lineWidth);
 
         if( skip_drawing_contour ) return;
@@ -614,7 +678,9 @@ function draw_root_microsheme() {
     // Microsheme.draw_grid(layer1.getContext('2d'), X0, Y0, MicroshemeArray[0].Xquantity, MicroshemeArray[0].Yquantity, TILE_RESOLUION);
     clear_canvas(layer_for_contours);
     MicroshemeArray[0].recurse_draw_contour(X0, Y0, TILE_RESOLUION, [[MicroshemeArray[0].Xsize], [MicroshemeArray[0].Ysize], [MicroshemeArray[0].Xsize], [MicroshemeArray[0].Ysize]], [42, 42, 42, 42] /* апхпх */, layer_for_contours.getContext('2d'));
-    layer1.getContext('2d').drawImage(layer_for_contours, 0, 0);
+
+    // для дебагинга:
+    // layer1.getContext('2d').drawImage(layer_for_contours, 800, 0);
 }
 
 
@@ -629,7 +695,9 @@ class CursorPoint {
     
 
     // КООРДИНАТЫ МЫШИ
-    IsVisible = 0;
+    IsOnCanvas = 0;  // обновляется "явно" от действий мышки (при выходе за canvas)
+    IsOnField  = 0;  // курсор в пределах "корневой" микросхемы / обновляется "явно" от requestAnimationFrame и "неявно" от действий мышки 
+    IsPossiblePlace = 0;
     X = -1;
     Y = -1;
 
@@ -640,8 +708,10 @@ class CursorPoint {
     // Сдвиг (отображаемого под курсором) объекта при единичном масштабе
     Obj_SHIFT_X = 0;
     Obj_SHIFT_Y = 0;
-    CurrInfo = [1, 1, 1];  // [0], [1] - горизонтальный/вертикальный размер, [2] - масштаб
-    CurrRotation = 0;
+    Obj_CORNER_X = 0;
+    Obj_CORNER_Y = 0;
+    Obj_x_size = 1; Obj_y_size = 1; Obj_scale = 1;
+    // CurrRotation = 0;
 
     CurrType = Microsheme.TypeEmpty;
     Scale    = 1;  // масштаб места где сейчас находится курсор
@@ -649,8 +719,10 @@ class CursorPoint {
 
     // МИКРОСХЕМА на которую "смотрим"
     Microsheme_SHIFT_X = 0;
-    Microsheme_SHIFT_Y = 0
-    CURR_i = 0; CURR_j = 0; CURR_id = 0;
+    Microsheme_SHIFT_Y = 0;
+    PLACE_i = -1;
+    PLACE_j = -1;
+    CURR_id = 0;
     ROOT_Microsheme_SHIFT_X = 0;
     ROOT_Microsheme_SHIFT_Y = 0;
 
@@ -662,180 +734,172 @@ class CursorPoint {
     // ======================================================================================================
 
     // ПЕРЕРИСОВКА canvas
-    prevX; prevY; prevIsVisible; prevCurrType; prevScale;
-    record_curr_params() {
-        this.prevX         = this.X;
-        this.prevY         = this.Y;
-        this.prevIsVisible = this.IsVisible;
-        this.prevCurrType  = this.CurrType;
-        this.prevScale     = this.Scale;
-    }
 
-    // later: сделать бы: return 1 - изменился предмет, return 2 - изменились координаты
-    is_draw_change() {  // хехе, сюда бы макросы
-        let visible       = (this.IsVisible || this.prevIsVisible) && ((this.CurrType != Microsheme.TypeEmpty) || (this.prevCurrType != Microsheme.TypeEmpty));
-        let params_change = (this.IsVisible != this.prevIsVisible) || (this.X != this.prevX) || (this.Y != this.prevY) || (this.CurrType != this.prevCurrType) || (this.Scale != this.prevScale);
-        this.record_curr_params();
-        return visible && params_change;
-    }
+    // РУИНЫ когда-то планирующейся "эффективности":
+    //       prevX; prevY; prevIsOnCanvas; prevCurrType; prevScale;
+    //       record_curr_params() { ... }
+    //       // later: сделать бы: return 1 - изменился предмет, return 2 - изменились координаты
+    //       is_draw_change() {  // хехе, сюда бы макросы
+    //           let visible       = (this.IsOnCanvas || this.prevIsOnCanvas) && ((this.CurrType != Microsheme.TypeEmpty) || (this.prevCurrType != Microsheme.TypeEmpty));
+    //           let params_change = (this.IsOnCanvas != this.prevIsOnCanvas) || (this.X != this.prevX) || (this.Y != this.prevY) || (this.CurrType != this.prevCurrType) || (this.Scale != this.prevScale);
+    //           this.record_curr_params();
+    //           return visible && params_change;
+    //       }
 
-    update_canvas(forced = 0) {
-        if( !forced && !this.is_draw_change() ) return;
+    recalc_and_redraw_all() {  // кароче функция делающая всё
+        this.recalc_cursor_positioning();
+        this.recalc_object_positioning();
 
-        // по идеи бы пересчитывать только при изменении координат
-        this.recalc_path();
-
-        this.Ctx.clearRect(0, 0, this.Canvas_W, this.Canvas_H);
+        clear_canvas(this.Canvas);
         
-        if( this.IsVisible == 0 ) return;
-        if( this.CurrType  == Microsheme.TypeEmpty ) return;
-
-
-        // Рисуем объект под курсором
-        let A  = TILE_RESOLUION / (this.Scale * this.CurrInfo[2]);
-        let x1 = this.X + this.Obj_SHIFT_X / this.Scale;
-        let y1 = this.Y + this.Obj_SHIFT_Y / this.Scale;
-        
-
-        // дааа, это точно надо рефакторить
-        if( this.is_inside_root_microsheme(this.X, this.Y) ) {
-            this.highlight_covered_zone(A*this.CurrInfo[0], A*this.CurrInfo[1]);
-        }
-
-        if( this.CurrType  == Microsheme.TypeImage ) {
-            this.Ctx.drawImage(IMG1, x1, y1, A, A);
-        }
-
-        
-        if( this.CurrType  == CursorPoint.TypeNewMicrosheme ) {
-            Microsheme.draw_grid(this.Ctx, x1, y1, this.CurrInfo[0], this.CurrInfo[1], A);
-        }
-    }
-
-    is_inside_root_microsheme(x, y) {
-        let x1 = this.ROOT_Microsheme_SHIFT_X;
-        let y1 = this.ROOT_Microsheme_SHIFT_Y;
-        let w  = MicroshemeArray[0].Xquantity * TILE_RESOLUION;
-        let h  = MicroshemeArray[0].Yquantity * TILE_RESOLUION;
-        return (x1 <= x && x <= x1+w) && (y1 <= y && y <= y1+h);
-    }
-
-
-    PATH;
-    recalc_path() {
-        let shift_x = this.ROOT_Microsheme_SHIFT_X, shift_y = this.ROOT_Microsheme_SHIFT_Y, accumulated_scale = 1, id = 0;
-        this.PATH = [];
-        if( this.is_inside_root_microsheme(this.X, this.Y) ) {
-            let path;
-            [shift_x, shift_y, accumulated_scale, id, path] = Microsheme.at(this.X, this.Y, shift_x, shift_y, MicroshemeArray);
-            this.PATH = path;
-        }
-
-        // console.log(shift_x, shift_y, accumulated_scale);
-        // параметры "курсора"
-        this.Scale = accumulated_scale;
-        this.Microsheme_SHIFT_X = shift_x;
-        this.Microsheme_SHIFT_Y = shift_y;
-        this.CURR_id = id;
-
-        // параметры "объекта" (рисуемого под курсором)
-        let [i, j]  = this.magnetize_to_grid(this.X - this.Microsheme_SHIFT_X + this.Obj_SHIFT_X / this.Scale, this.Y - this.Microsheme_SHIFT_Y + this.Obj_SHIFT_Y / this.Scale);
-        this.CURR_i = i;
-        this.CURR_j = j;
-    }
-
-    magnetize_to_grid(x, y) {
-        let A = TILE_RESOLUION / this.Scale;
-        let i = Math.floor(y/A), j = Math.floor(x/A);
-        if( (2*j+1)*A < 2*x ) j++;
-        if( (2*i+1)*A < 2*y ) i++;
-        return [i, j];
-    }
-
-    // подсветка зоны вставки
-    highlight_covered_zone() {
-        this.Ctx.save();                                                       // сохраняем текущее состояние (включая трансформацию)
-        this.Ctx.translate(this.Microsheme_SHIFT_X, this.Microsheme_SHIFT_Y);  // применяем сдвиг только внутри этой функции
-
-        let   obj_x_size = Math.floor( this.CurrInfo[0] / this.CurrInfo[2] ), obj_y_size = Math.floor( this.CurrInfo[1] / this.CurrInfo[2] );
-        
-        // Объект находится в пределах поля: [j1, j2) x [i1, i2)
-        let [i1, i2, j1, j2] = Microsheme.crop(this.CURR_i, this.CURR_j, obj_x_size, obj_y_size, 0, MicroshemeArray[this.CURR_id].Yquantity, 0, MicroshemeArray[this.CURR_id].Xquantity);
-        let obj_intersect_field = (j1 < j2) && (i1 < i2);
-
-        // console.log(i1, i2, j1, j2);
-            
-
-        let A = TILE_RESOLUION / this.Scale;
-
-        
-        // Объект выходит за область вставки
-        this.Ctx.fillStyle = 'rgba(256, 0, 0, 0.4)';
-        if( !MicroshemeArray[this.CURR_id].is_in_indx(this.CURR_i, this.CURR_j, obj_x_size, obj_y_size) ) {
-            this.Ctx.beginPath();
-            this.Ctx.rect(this.CURR_j*A, this.CURR_i*A, obj_x_size*A, obj_y_size*A);
-
-            // вырезаем "дырку"
-            if( obj_intersect_field ) {
-                this.Ctx.rect(j1*A, i1*A, (j2-j1)*A, (i2-i1)*A);
-            }
-            this.Ctx.fill('evenodd');
-        }
-
-        // Объект находится вне поля
-        if( !obj_intersect_field ) {
-            this.Ctx.restore();       // возвращаем прежнее состояние canvas
+        if( !this.IsOnCanvas ) {
+            // СРОЧНОЕ todo [link1]: надо отдельно нормально вычислять layer_for_contours, а не с картинками микросхем на нём
+            this.Ctx.drawImage(layer_for_contours, 0, 0);
             return;
         }
-        
-        
-        // Аккумулируем "дырку" от предметов покрытых объектом
-        this.Ctx.fillStyle = this.IsCntrlPressed ? 'rgba(0, 0, 0, 0.7)' : 'rgba(256, 0, 0, 0.4)';
-        this.IsSomethingCovered = 0;
-        this.Ctx.beginPath();
 
+        this.highlight_covered_zone();
+
+
+        // Если при "пустой" руке находимся на рамке - то выделяем микросхему имеющую эту рамку
+        if( this.IsOnField && this.CURR_id && this.CurrType == Microsheme.TypeEmpty) {
+            function is_in_rect(x, y, x1, y1, x2, y2) { return x1 <= x && x <= x2 && y1 <= y && y <= y2; }
+
+            // находимся на рамке
+            let A = TILE_RESOLUION / this.Scale, dA = Microsheme.HALO_OFFSET * A;
+            let w = MicroshemeArray[this.CURR_id].Xquantity * A, h = MicroshemeArray[this.CURR_id].Yquantity * A;
+            if( !is_in_rect(this.X - this.Microsheme_SHIFT_X, this.Y - this.Microsheme_SHIFT_Y, dA, dA, w - dA, h - dA) ) {
+                this.Ctx.fillStyle = 'rgba(195, 220, 72, 0.4)';
+                this.Ctx.fillRect(this.Microsheme_SHIFT_X, this.Microsheme_SHIFT_Y, w, h);
+            }
+        }
+
+
+        // СРОЧНОЕ todo [link1]: надо отдельно нормально вычислять layer_for_contours, а не с картинками микросхем на нём
+        this.Ctx.drawImage(layer_for_contours, 0, 0);
+
+        // Рисуем объект под курсором
+        let A = TILE_RESOLUION / (this.Scale * this.Obj_scale);
+        if( this.CurrType  == Microsheme.TypeImage          ) {
+            this.Ctx.drawImage(IMG1, this.Obj_CORNER_X, this.Obj_CORNER_Y, A, A);
+        }
+        if( this.CurrType  == CursorPoint.TypeNewMicrosheme ) {
+            Microsheme.draw_grid(this.Ctx, this.Obj_CORNER_X, this.Obj_CORNER_Y, this.Obj_x_size*this.Obj_scale, this.Obj_y_size*this.Obj_scale, A);
+        }
+    }
+
+   
+    PATH = [];
+    recalc_cursor_positioning() {
+        // Вычисляем позицию микросхемы в которой находится курсор
+        [this.Microsheme_SHIFT_X, this.Microsheme_SHIFT_Y, this.Scale, this.CURR_id, this.PATH] = Microsheme.at(this.X, this.Y, this.ROOT_Microsheme_SHIFT_X, this.ROOT_Microsheme_SHIFT_Y, MicroshemeArray);
+    
+        // ..... страшно ..... функция Microsheme.at() ..... это трюки какие-то ..... 
+        this.IsOnField = (this.CURR_id != -1) && this.IsOnCanvas;
+    }
+
+    recalc_object_positioning() {  // кароче функция делающая всё
+        // ВЫЧИСЛЯЕМ Параметры "объекта" рисуемого под курсором
+        this.Obj_CORNER_X = this.X + this.Obj_SHIFT_X / this.Scale;
+        this.Obj_CORNER_Y = this.Y + this.Obj_SHIFT_Y / this.Scale;
+
+        // хак, типо сразу дали значения
+        this.IsPossiblePlace             = 0;
+        this.IsSomethingCovered          = 0;
         this.HoveredInnerMicroshemesIndx = new Set();
-        
-        for(let i = i1; i < i2; i++)
-        for(let j = j1; j < j2; j++) {
-            let indx = MicroshemeArray[this.CURR_id].ij_to_indx(i, j);
-            if( MicroshemeArray[this.CURR_id].FieldType[indx] == Microsheme.TypeEmpty ) continue;    
-            
-            if( MicroshemeArray[this.CURR_id].FieldType[indx] == Microsheme.TypeImage ) {
-                this.IsSomethingCovered = 1;
-                this.Ctx.rect    (j*A, i*A, A, A);
-                this.Ctx.fillRect(j*A, i*A, A, A);
-                continue;
-            }
 
-            let micro_i = i, micro_j = j;
-            if( MicroshemeArray[this.CURR_id].FieldType[indx] == Microsheme.TypeLink ) {
-                indx               = MicroshemeArray[this.CURR_id].FieldInfo[indx];
-                [micro_i, micro_j] = MicroshemeArray[this.CURR_id].indx_to_ij(indx);
-            }
+        if( !this.IsOnField ) return;
+
+        let fld_x_quantity = MicroshemeArray[this.CURR_id].Xquantity, fld_y_quantity = MicroshemeArray[this.CURR_id].Yquantity;
+        if( !( this.IsPossiblePlace = (this.Obj_x_size <= fld_x_quantity && this.Obj_y_size <= fld_y_quantity) ) ) return;
+
+
+        // Магнитим область вставки объекта к сетке
+        const magnetize_to_grid = (x, y) => {
+            let A = TILE_RESOLUION / this.Scale;
+            let i = Math.floor(y/A), j = Math.floor(x/A);
+            if( (2*j+1)*A < 2*x ) j++;
+            if( (2*i+1)*A < 2*y ) i++;
+            return [i, j];
+        }
+        [this.PLACE_i, this.PLACE_j] = magnetize_to_grid(this.Obj_CORNER_X - this.Microsheme_SHIFT_X, this.Obj_CORNER_Y - this.Microsheme_SHIFT_Y);
+
+        // Магнитим область вставки объекта внутрь поля
+        this.PLACE_i = Math.min( Math.max(this.PLACE_i, 0),  fld_y_quantity - this.Obj_y_size );
+        this.PLACE_j = Math.min( Math.max(this.PLACE_j, 0),  fld_x_quantity - this.Obj_x_size );
+
+        // Проходимся по перекрываемам предметам на поле
+        // Проходимся по перекрываемам предметам на поле
+        for(let i = this.PLACE_i, di = 0; di < this.Obj_y_size; i++, di++)
+        for(let j = this.PLACE_j, dj = 0; dj < this.Obj_x_size; j++, dj++) {
+            let indx = MicroshemeArray[this.CURR_id].ij_to_indx(i, j);
+            if( MicroshemeArray[this.CURR_id].FieldType[indx] == Microsheme.TypeLink  ) { indx = MicroshemeArray[this.CURR_id].FieldInfo[indx]; }
+
+            if( MicroshemeArray[this.CURR_id].FieldType[indx] == Microsheme.TypeImage ) { this.IsSomethingCovered = 1; continue; }
 
             if( MicroshemeArray[this.CURR_id].FieldType[indx] == Microsheme.TypeInnerMicrosheme ) {
                 this.IsSomethingCovered = 1;
                 if( this.HoveredInnerMicroshemesIndx.has(indx) ) continue;
+                // ну блин, мы конечно могли бы не использовать Set.has - но это ВОЗНЯ
+                // хоть и могли бы железно получить линейную сложность: (Создать марицу-маску размера obj_x_size*obj_y_size показывающие какие (i, j) ещё не проверены. При встрече микросхемы отмечать все (i, j) лежащие в этой микросхеме.)
+
                 // добавляем новую микросхему
                 this.HoveredInnerMicroshemesIndx.add(indx);
-                
-                let micro  =  MicroshemeArray[MicroshemeArray[this.CURR_id].FieldInfo[indx]];
-                let x_size = micro.Xsize, y_size = micro.Ysize;
-                this.Ctx.fillRect(micro_j*A, micro_i*A, x_size*A, y_size*A);
-
-                let [ii1, ii2, jj1, jj2] = Microsheme.crop(micro_i, micro_j, micro.Xsize, micro.Ysize, i1, i2, j1, j2);
-                this.Ctx.rect    (jj1*A, ii1*A, (jj2-jj1)*A, (ii2-ii1)*A);
-
                 continue;
             }
         }
+    }
 
-        // ОЧчееень похоже на: "Объект выходит за область вставки"
+    // подсветка зоны вставки
+    highlight_covered_zone() {
+        if( !this.IsOnField ) return;
+
+        let A = TILE_RESOLUION / this.Scale;
+
+        if( !this.IsPossiblePlace ) {  // Объект не способен вместиться на поле
+            this.Ctx.fillStyle = 'rgba(256, 0, 0, 0.4)';
+            this.Ctx.fillRect(this.Obj_CORNER_X, this.Obj_CORNER_Y, this.Obj_x_size*A, this.Obj_y_size*A)
+            return;
+        }
+
+        this.Ctx.save();                                                       // сохраняем текущее состояние (включая трансформацию)
+        this.Ctx.translate(this.Microsheme_SHIFT_X, this.Microsheme_SHIFT_Y);  // применяем сдвиг только внутри этой функции
+        
+        // Проходимся по перекрываемам предметам на поле
+        this.Ctx.fillStyle = this.IsCntrlPressed ? 'rgba(0, 0, 0, 0.7)' : 'rgba(256, 0, 0, 0.4)';
+
+        // Перекрываемые микросхемы
+        this.Ctx.beginPath();
+        for(let indx of this.HoveredInnerMicroshemesIndx) {
+            let [i, j]   = MicroshemeArray[this.CURR_id].indx_to_ij(indx);
+            let micro_id = MicroshemeArray[this.CURR_id].FieldInfo [indx];
+
+            if( this.IsCntrlPressed ) {  // выделяем всю микросхему
+                this.Ctx.fillRect(j*A, i*A, MicroshemeArray[micro_id].Xsize*A, MicroshemeArray[micro_id].Ysize*A);
+                continue;
+            }
+            // выделяем перекрытую часть микросхемы
+            let i1 = Math.max(i, this.PLACE_i), i2 = Math.min(i+MicroshemeArray[micro_id].Ysize, this.PLACE_i + this.Obj_y_size);
+            let j1 = Math.max(j, this.PLACE_j), j2 = Math.min(j+MicroshemeArray[micro_id].Xsize, this.PLACE_j + this.Obj_x_size);
+            this.Ctx.rect(j1*A, i1*A, (j2-j1)*A, (i2-i1)*A);
+        }
+
+        // Аккумулируем перекрытые Microsheme.TypeImage
+        for(let i = this.PLACE_i, di = 0; di < this.Obj_y_size; i++, di++)
+        for(let j = this.PLACE_j, dj = 0; dj < this.Obj_x_size; j++, dj++) {
+            let indx = MicroshemeArray[this.CURR_id].ij_to_indx(i, j);
+            if( MicroshemeArray[this.CURR_id].FieldType[indx] == Microsheme.TypeImage ) {
+                this.Ctx.rect(j*A, i*A, A, A);
+            }
+        }
+        this.Ctx.fill();
+
+        
+        // Область вставки объекта
         this.Ctx.fillStyle = 'rgba(0, 0, 256, 0.3)';
-        this.Ctx.rect(j1*A, i1*A, (j2-j1)*A, (i2-i1)*A);
+        this.Ctx.rect(this.PLACE_j*A, this.PLACE_i*A, this.Obj_x_size*A, this.Obj_y_size*A);
+        
         this.Ctx.fill('evenodd');
-       
 
         this.Ctx.restore();       // возвращаем прежнее состояние canvas
     }
@@ -845,52 +909,40 @@ class CursorPoint {
 
     // ADD EVENT LISTENER-ы (нормаально так вышло . . . , да даже ~почти имбово вышло!!!ы)
     mousemove(event) {
-        this.IsVisible = 1;
+        this.IsOnCanvas = 1;
         this.X = event.offsetX;
         this.Y = event.offsetY;
     }
 
-    mouseout(event) { this.IsVisible = 0; }
+    mouseout(event) { this.IsOnCanvas = 0; }
 
     keydown(event) {
+        const prev_code = [this.CurrType, this.Obj_x_size, this.Obj_y_size, this.Obj_scale];
+        let   neww_code = structuredClone(prev_code);
         switch( event.key ) {
             case 'Control':
                 // мда (дорогая операция)
                 if( this.IsCntrlPressed != 1 ) {
                     this.IsCntrlPressed  = 1;
-                    this.update_canvas(1);
+                    this.recalc_and_redraw_all();
                 }
-                break;
+                return;
 
             case 'r':
-                let x_quantity = this.CurrInfo[0], y_quantity = this.CurrInfo[1];
-                this.CurrInfo[0] = y_quantity, this.CurrInfo[1] = x_quantity;
-                this.update_canvas(1);
+                [neww_code[1], neww_code[2]] = [neww_code[2], neww_code[1]];
                 break;
 
-            case 'Escape':
-                this.CurrType = Microsheme.TypeEmpty;
-                break;
-
-            case '1':
-                this.CurrType     = Microsheme.TypeImage;
-                this.CurrRotation = 0;
-                this.Obj_SHIFT_X = -TILE_RESOLUION/2;
-                this.Obj_SHIFT_Y = -TILE_RESOLUION/2;
-                this.CurrInfo[0]  = 1;
-                this.CurrInfo[1]  = 1;
-                this.CurrInfo[2]  = 1;
-                break;
-
-            case '2':
-                this.CurrType     = CursorPoint.TypeNewMicrosheme;
-                this.CurrRotation = 0;
-                this.CurrInfo[2]  = 2;
-                this.CurrInfo[0]  = 3 * this.CurrInfo[2];
-                this.CurrInfo[1]  = 2 * this.CurrInfo[2];
-                this.Obj_SHIFT_X = -3*TILE_RESOLUION/2;
-                this.Obj_SHIFT_Y = -2*TILE_RESOLUION/2;
-                break;
+            case 'Escape': neww_code = [Microsheme .TypeEmpty        , 0, 0, 1]; break;
+            case '1':      neww_code = [Microsheme .TypeImage        , 1, 1, 1]; break;
+            case '2':      neww_code = [CursorPoint.TypeNewMicrosheme, 3, 2, 2]; break;
+        }
+        
+        // есть ли изменение:  neww_code != prev_code
+        if( neww_code.reduce( (acc, e, i) => (acc || e != prev_code[i]) , 0 ) ) {
+            [this.CurrType, this.Obj_x_size, this.Obj_y_size, this.Obj_scale] = neww_code;
+            this.Obj_SHIFT_X = -TILE_RESOLUION*this.Obj_x_size/2;
+            this.Obj_SHIFT_Y = -TILE_RESOLUION*this.Obj_y_size/2;
+            this.recalc_and_redraw_all();
         }
     }
 
@@ -900,7 +952,7 @@ class CursorPoint {
                 // мда
                 if( this.IsCntrlPressed != 0 ) {
                     this.IsCntrlPressed  = 0;
-                    this.update_canvas(1);
+                    this.recalc_and_redraw_all();
                 }
                 break;
         }
@@ -918,31 +970,36 @@ class CursorPoint {
     }
 
     mousedown(event) {
+        // хз, какой там порядок у обработчик событий, может этот вызов лишний, так как есть актуальный (с того момента мышка не сдвинулась) вызов highlight_covered_zone() красящий canvas
+        this.recalc_cursor_positioning();
+        this.recalc_object_positioning();
+        
+        if( !this.IsPossiblePlace) return;
+
+        if( this.IsSomethingCovered && !this.IsCntrlPressed ) return;
+
+        console.log('PLACE at: id=' + this.CURR_id + ' i=' + this.PLACE_i + ' j=' + this.PLACE_j);
+        
+        if( this.delete_covered_microshemes() ) {
+            // на память что можно так сделать (см. возвращаемое значение delete_covered_microshemes)
+            // типо вдруг тут полезно что-то написать
+        }
+
         if( this.CurrType == Microsheme.TypeImage ) {
-            if( !MicroshemeArray[this.CURR_id].is_in_indx(this.CURR_i, this.CURR_j) || (this.IsSomethingCovered && !this.IsCntrlPressed) ) return;
-
-            if( this.delete_covered_microshemes() ) {
-                // на память что можно так сделать (тип вдруг потом лень будет посмотреть на возвращаемое значение delete_covered_microshemes)
-            }
-
-            MicroshemeArray[this.CURR_id].add_image(this.CURR_i, this.CURR_j);
+            MicroshemeArray[this.CURR_id].add_image(this.PLACE_i, this.PLACE_j);
             this.redraw_layer1();
+            this.recalc_and_redraw_all();
             return;
         }
 
         if( this.CurrType == CursorPoint.TypeNewMicrosheme ) {
-            // todo: "убрать" x_size/y_size
-            let x_size = Math.floor( this.CurrInfo[0] / this.CurrInfo[2] ), y_size = Math.floor( this.CurrInfo[1] / this.CurrInfo[2] );
-            if( !MicroshemeArray[this.CURR_id].is_in_indx(this.CURR_i, this.CURR_j, x_size, y_size)  || (this.IsSomethingCovered && !this.IsCntrlPressed) ) return;
+            MicroshemeArray.push( new Microsheme(this.Obj_x_size*this.Obj_scale, this.Obj_y_size*this.Obj_scale, this.Obj_scale) );
 
-            this.delete_covered_microshemes();
-
-            MicroshemeArray.push( new Microsheme(this.CurrInfo[0], this.CurrInfo[1], this.CurrInfo[2]) );
-
-            MicroshemeArray[this.CURR_id].add_inner_microsheme(this.CURR_i, this.CURR_j, MicroshemeArray, MicroshemeArray.length-1);
+            MicroshemeArray[this.CURR_id].add_inner_microsheme(this.PLACE_i, this.PLACE_j, MicroshemeArray, MicroshemeArray.length-1);
 
             this.redraw_layer1();
-            console.log('add: ', this.CURR_id, this.CURR_i, this.CURR_j, MicroshemeArray.length-1);
+            this.recalc_and_redraw_all();
+            console.log('add: ', this.CURR_id, this.PLACE_i, this.PLACE_j, MicroshemeArray.length-1);
             console.log('create: ', MicroshemeArray.length-1, ' at: ', this.CURR_id);;
             return;
         }
@@ -958,9 +1015,6 @@ class CursorPoint {
 
         clear_canvas(layer1);
         draw_root_microsheme();
-
-        this.Scale = -1;
-        this.update_canvas();  // какая тут туфта
     }
     
 
@@ -972,8 +1026,6 @@ class CursorPoint {
 
         this.ROOT_Microsheme_SHIFT_X = root_microsheme_shift_x;
         this.ROOT_Microsheme_SHIFT_Y = root_microsheme_shift_y;
-
-        this.record_curr_params();
     }
 
 
@@ -1010,7 +1062,7 @@ function start_animation(time) {
 
 let TimeDelay = 20;
 function animate(time) {
-    myCursorPoint.update_canvas();
+    myCursorPoint.recalc_and_redraw_all();
 
     // let currFrameIndx = Math.floor( (time - StartAnimationTime)/TimeDelay );
     // if( currFrameIndx == FrameIndx ) { requestAnimationFrame(animate); return; }
